@@ -36,7 +36,8 @@ export const SOURCES = [
   // Analysis & community
   { id: 'simonw', name: 'Simon Willison', category: 'analysis', weight: 1.1, color: '#38bdf8', home: 'https://simonwillison.net/', kind: 'rss', url: 'https://simonwillison.net/atom/everything/' },
   { id: 'latent', name: 'Latent Space', category: 'analysis', weight: 1.0, color: '#f472b6', home: 'https://www.latent.space/', kind: 'rss', url: 'https://www.latent.space/feed' },
-  { id: 'importai', name: 'Import AI', category: 'analysis', weight: 1.2, color: '#facc15', home: 'https://importai.substack.com/', kind: 'rss', url: 'https://importai.substack.com/feed' },
+  // importai.substack.com returns 403 to GitHub Actions runners; the same issues are mirrored here.
+  { id: 'importai', name: 'Import AI', category: 'analysis', weight: 1.2, color: '#facc15', home: 'https://jack-clark.net/', kind: 'rss', url: 'https://jack-clark.net/feed/' },
   { id: 'hn', name: 'Hacker News', category: 'analysis', weight: 1.0, color: '#ff6600', home: 'https://news.ycombinator.com/', kind: 'rss', url: 'https://hnrss.org/newest?q=AI+OR+LLM+OR+OpenAI+OR+Anthropic+OR+Gemini&points=100' },
 ];
 
