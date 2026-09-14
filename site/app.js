@@ -303,13 +303,24 @@ function closeAiMenu({ restoreFocus = false } = {}) {
   if (restoreFocus) $('#ai-switch-btn').focus();
 }
 
+/**
+ * Puts the filter bar just under the nav, so a changed filter starts you at
+ * the first matching story instead of somewhere in the middle of the old list.
+ * With `onlyIfPast`, the page is left alone when the feed start is already on
+ * screen below you — nothing is hidden then, so moving would only be a jolt.
+ */
+function scrollToFeedStart({ onlyIfPast = false } = {}) {
+  const top = $('#controls-anchor').getBoundingClientRect().top + scrollY - $('#nav').offsetHeight;
+  if (onlyIfPast && scrollY <= top + 2) return;
+  if (Math.abs(scrollY - top) > 2) scrollTo({ top, behavior: 'instant' });
+}
+
 /** Picking from the feed: same as the top tabs, then land at the start of the new feed. */
 function chooseFromFeed(id) {
   closeAiMenu();
   setFocus(id);
-  const navHeight = $('#nav').offsetHeight;
-  const top = $('#controls-anchor').getBoundingClientRect().top + scrollY - navHeight;
-  if (Math.abs(scrollY - top) > 2) scrollTo({ top, behavior: 'instant' });
+  // Always: the panel and top stories above change height, which moves the feed.
+  scrollToFeedStart();
   $('#ai-switch-btn').focus({ preventScroll: true });
 }
 
@@ -836,7 +847,7 @@ function bindEvents() {
     if (!chip) return;
     state.topic = chip.dataset.focusTopic;
     applyFilters();
-    $('#latest').scrollIntoView();
+    scrollToFeedStart();
   });
 
   addEventListener('popstate', () => setFocus(new URLSearchParams(location.search).get('ai'), { push: false }));
@@ -891,13 +902,19 @@ function bindEvents() {
     state.category = tab.dataset.category;
     state.topic = null;
     applyFilters();
+    scrollToFeedStart({ onlyIfPast: true });
+    // The tabs were re-rendered; keep keyboard focus on the one just chosen.
+    $(`.tab[data-category="${state.category}"]`)?.focus({ preventScroll: true });
   });
 
   $('#topics').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
-    state.topic = state.topic === chip.dataset.topic ? null : chip.dataset.topic;
+    const id = chip.dataset.topic;
+    state.topic = state.topic === id ? null : id;
     applyFilters();
+    scrollToFeedStart({ onlyIfPast: true });
+    $(`#topics .chip[data-topic="${id}"]`)?.focus({ preventScroll: true });
   });
 
   let searchTimer;
@@ -906,6 +923,7 @@ function bindEvents() {
     searchTimer = setTimeout(() => {
       state.query = e.target.value.trim();
       applyFilters();
+      scrollToFeedStart({ onlyIfPast: true });
     }, 140);
   });
 
@@ -918,6 +936,7 @@ function bindEvents() {
       $('#search').value = '';
       state.query = '';
       applyFilters();
+      scrollToFeedStart({ onlyIfPast: true });
     }
   });
 
