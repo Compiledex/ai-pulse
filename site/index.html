@@ -114,11 +114,15 @@
         <p id="feed-intro">Everything from the last 30 days, newest first. Filter by where it came from or what it's about.</p>
       </div>
 
+      <div id="controls-anchor"></div>
       <div class="controls" id="controls">
+        <div class="ai-switch" id="ai-switch">
+          <button class="ai-switch-btn" id="ai-switch-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="ai-menu" title="Change which AI the page is about"></button>
+          <div class="ai-menu" id="ai-menu" role="menu" aria-label="Choose an AI" hidden></div>
+        </div>
         <div class="tabs" role="tablist" aria-label="Source type" id="tabs">
           <span class="tab-indicator" aria-hidden="true"></span>
         </div>
-        <button class="focus-pill" id="focus-pill" type="button" hidden></button>
         <label class="search">
           <span class="sr-only">Search stories</span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -127,6 +131,7 @@
         </label>
       </div>
 
+      <div class="mobile-filters" id="mobile-filters"></div>
       <div class="chips" id="topics" aria-label="Topics"></div>
 
       <div id="feed" aria-live="polite">

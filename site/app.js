@@ -256,16 +256,70 @@ function renderChips() {
     .join('');
 }
 
-/** In the feed controls: which AI the feed is limited to, with a way back to all. */
-function renderFocusPill() {
+const focusCount = (f) => (f ? state.data.items.filter((i) => inFocus(i, f)).length : state.data.items.length);
+const focusMark = (f) => (f && logo(f.id, 'tab-logo')) || '<span class="swatch" aria-hidden="true"></span>';
+
+const CHEVRON = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const CHECK = '<svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 12.5 10 17 19 7"/></svg>';
+
+/**
+ * The AI switcher in the feed controls. It is not a separate filter: it reads
+ * and sets the same page-wide focus as the tabs at the top, so the two always agree.
+ */
+function renderAiSwitch() {
+  const list = state.data.focus ?? [];
+  $('#ai-switch').hidden = !list.length;
   const f = state.focus;
-  const pill = $('#focus-pill');
-  pill.hidden = !f;
-  if (!f) return;
-  pill.style.setProperty('--c', f.color);
-  pill.title = `Showing only ${f.name} stories. Click to show all AI.`;
-  pill.innerHTML = `${logo(f.id, 'tab-logo') || '<span class="swatch" aria-hidden="true"></span>'}<span>${esc(f.name)} only</span><span class="x" aria-hidden="true">×</span>`;
-  $('#feed-intro').textContent = `Every ${f.name} story from the last 30 days, newest first. Narrow it down by source type or topic.`;
+
+  const btn = $('#ai-switch-btn');
+  btn.classList.toggle('all', !f);
+  if (f) btn.style.setProperty('--c', f.color);
+  else btn.style.removeProperty('--c');
+  btn.innerHTML = `${focusMark(f)}<span>${esc(f?.name ?? 'All AI')}</span>${CHEVRON}`;
+
+  $('#ai-menu').innerHTML = [null, ...list].map((x) => `
+    <button class="ai-menu-item${x ? '' : ' all'}" role="menuitemradio" tabindex="-1"
+      aria-checked="${(f?.id ?? null) === (x?.id ?? null)}" data-focus="${esc(x?.id ?? '')}" ${x ? `style="--c:${esc(x.color)}"` : ''}>
+      ${focusMark(x)}<span>${esc(x?.name ?? 'All AI')}</span><small>${focusCount(x)}</small>${CHECK}
+    </button>`).join('');
+
+  $('#feed-intro').textContent = f
+    ? `Every ${f.name} story from the last 30 days, newest first. Narrow it down by source type or topic.`
+    : "Everything from the last 30 days, newest first. Filter by where it came from or what it's about.";
+}
+
+function openAiMenu() {
+  const menu = $('#ai-menu');
+  menu.hidden = false;
+  $('#ai-switch-btn').setAttribute('aria-expanded', 'true');
+  ($('[aria-checked="true"]', menu) ?? $('.ai-menu-item', menu))?.focus();
+}
+
+function closeAiMenu({ restoreFocus = false } = {}) {
+  const menu = $('#ai-menu');
+  if (menu.hidden) return;
+  menu.hidden = true;
+  $('#ai-switch-btn').setAttribute('aria-expanded', 'false');
+  if (restoreFocus) $('#ai-switch-btn').focus();
+}
+
+/** Picking from the feed: same as the top tabs, then land at the start of the new feed. */
+function chooseFromFeed(id) {
+  closeAiMenu();
+  setFocus(id);
+  const navHeight = $('#nav').offsetHeight;
+  const top = $('#controls-anchor').getBoundingClientRect().top + scrollY - navHeight;
+  if (Math.abs(scrollY - top) > 2) scrollTo({ top, behavior: 'instant' });
+  $('#ai-switch-btn').focus({ preventScroll: true });
+}
+
+/** On phones the source-type tabs live below the sticky bar instead of inside it. */
+const phone = matchMedia('(max-width: 640px)');
+function placeSourceTabs() {
+  const tabs = $('#tabs');
+  if (phone.matches && tabs.parentElement.id !== 'mobile-filters') $('#mobile-filters').append(tabs);
+  if (!phone.matches && tabs.parentElement.id !== 'controls') $('#controls').insertBefore(tabs, $('.search', $('#controls')));
+  moveIndicator();
 }
 
 /* ---------- Feed ---------------------------------------------------- */
@@ -404,10 +458,10 @@ function renderFocusTabs() {
   const list = state.data.focus ?? [];
   $('#focus').hidden = !list.length;
   const tab = (f) => {
-    const count = f ? state.data.items.filter((i) => inFocus(i, f)).length : state.data.items.length;
+    const count = focusCount(f);
     const selected = (state.focus?.id ?? null) === (f?.id ?? null);
     return `<button class="focus-tab${f ? '' : ' all'}" role="tab" aria-selected="${selected}" data-focus="${esc(f?.id ?? '')}" ${f ? `style="--c:${esc(f.color)}"` : ''}>
-      ${(f && logo(f.id, 'tab-logo')) || '<span class="swatch" aria-hidden="true"></span>'}${esc(f?.name ?? 'All AI')}<small>${count}</small></button>`;
+      ${focusMark(f)}${esc(f?.name ?? 'All AI')}<small>${count}</small></button>`;
   };
   const row = $('#focus-tabs');
   row.innerHTML = [tab(null), ...list.map(tab)].join('');
@@ -537,8 +591,7 @@ function renderHero() {
   neural?.setPalette(f ? [tint(f.color), tint(f.color, 0.35), tint(f.color, 0.65)] : null);
   document.title = f ? `${f.name} · AI Pulse` : 'AI Pulse';
   $('#feed-heading').innerHTML = f ? `Latest on <em>${esc(f.name)}</em>` : 'Latest <em>stories</em>';
-  if (!f) $('#feed-intro').textContent = "Everything from the last 30 days, newest first. Filter by where it came from or what it's about.";
-  renderFocusPill();
+  renderAiSwitch();
 }
 
 function setFocus(id, { push = true } = {}) {
@@ -794,7 +847,43 @@ function bindEvents() {
     if (Date.parse(state.meta.nextUpdateAt) <= Date.now()) poll().then(schedulePoll);
   });
 
-  $('#focus-pill').addEventListener('click', () => setFocus(null));
+  $('#ai-switch-btn').addEventListener('click', () => {
+    if ($('#ai-menu').hidden) openAiMenu();
+    else closeAiMenu();
+  });
+
+  $('#ai-switch-btn').addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      openAiMenu();
+    }
+  });
+
+  $('#ai-menu').addEventListener('click', (e) => {
+    const item = e.target.closest('.ai-menu-item');
+    if (item) chooseFromFeed(item.dataset.focus || null);
+  });
+
+  $('#ai-menu').addEventListener('keydown', (e) => {
+    const items = $$('.ai-menu-item', $('#ai-menu'));
+    const i = items.indexOf(document.activeElement);
+    const move = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: items.length - 1 }[e.key];
+    if (move !== undefined) {
+      e.preventDefault();
+      items[(move + items.length) % items.length].focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeAiMenu({ restoreFocus: true });
+    } else if (e.key === 'Tab') {
+      closeAiMenu();
+    }
+  });
+
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('#ai-switch')) closeAiMenu();
+  });
+
+  phone.addEventListener('change', placeSourceTabs);
 
   $('#tabs').addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
@@ -869,6 +958,7 @@ function bindEvents() {
 async function main() {
   neural = startNeural($('#neural'));
   bindEvents();
+  placeSourceTabs();
   onScroll();
   state.lastVisit = readLastVisit();
 
