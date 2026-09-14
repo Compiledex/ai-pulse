@@ -9,14 +9,16 @@
  * keep their images, and a source that is temporarily down keeps its last items.
  */
 
-import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { FOCUS } from './focus.mjs';
 import { parseAnthropicIndex } from './lib/anthropic.mjs';
 import { extractDescription, extractShareImage, parseFeed } from './lib/feed.mjs';
 import { fetchJson, fetchText, mapLimit } from './lib/http.mjs';
-import { dailyPapers, trendingModels } from './lib/huggingface.mjs';
+import { dailyPapers, trendingModels, trendingModelsBy } from './lib/huggingface.mjs';
 import {
   dropBoilerplateSummaries, mergeItems, normalizeEntries, reusePrevious,
 } from './lib/pipeline.mjs';
+import { nextUpdateAt } from './lib/schedule.mjs';
 import { tagTopics, TOPICS } from './lib/topics.mjs';
 import { CATEGORIES, SOURCES } from './sources.mjs';
 
@@ -107,6 +109,17 @@ async function withFallback(label, fn, fallback) {
   }
 }
 
+/** Each focusable AI, with trending open models from its Hugging Face org(s). */
+async function collectFocus(previous) {
+  const previousModels = new Map((previous?.focus ?? []).map((f) => [f.id, f.models]));
+  return Promise.all(FOCUS.map(async ({ hf, ...focus }) => {
+    const models = hf.length
+      ? await withFallback(`models by ${hf.join(', ')}`, () => trendingModelsBy(hf, 4), previousModels.get(focus.id))
+      : [];
+    return { ...focus, models };
+  }));
+}
+
 async function main() {
   const now = Date.now();
   const previous = await loadPrevious();
@@ -117,22 +130,27 @@ async function main() {
   await enrich(collected.items);
   const items = dropBoilerplateSummaries(collected.items);
 
-  const [models, papers] = await Promise.all([
+  const [models, papers, focus] = await Promise.all([
     withFallback('trending models', () => trendingModels(12), previous?.models),
     withFallback('daily papers', () => dailyPapers(9, { now }), previous?.papers),
+    collectFocus(previous),
   ]);
 
   if (items.length < MIN_ITEMS) {
     throw new Error(`only ${items.length} stories collected (minimum ${MIN_ITEMS}) — refusing to publish`);
   }
 
+  const workflow = await readFile('.github/workflows/build.yml', 'utf8').catch(() => '');
+
   const snapshot = {
     generatedAt: new Date(now).toISOString(),
+    nextUpdateAt: nextUpdateAt(workflow, now),
     categories: CATEGORIES,
     topics: TOPICS.map(({ id, label, kind }) => ({ id, label, kind })),
     sources: SOURCES.map(({ id, name, category, weight, color, home }) => ({
       id, name, category, weight, color, home, status: statuses[id],
     })),
+    focus,
     items,
     models,
     papers,
