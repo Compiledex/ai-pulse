@@ -720,10 +720,35 @@ function onScroll() {
   const max = document.documentElement.scrollHeight - innerHeight;
   document.documentElement.style.setProperty('--scroll', max > 0 ? (scrollY / max).toFixed(4) : 0);
   $('#nav').classList.toggle('scrolled', scrollY > 20);
+  $('#to-top').classList.toggle('show', scrollY > innerHeight * 0.9);
   const controls = $('#controls');
   const style = getComputedStyle(controls);
   controls.classList.toggle('stuck', style.position === 'sticky'
     && controls.getBoundingClientRect().top <= parseFloat(style.top) + 1);
+}
+
+const smoothBehavior = () => (matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth');
+
+/**
+ * The logo: back to the plain home page — all AI, no filters or search, at the
+ * top, with a clean URL. Done in place so it's instant, but the link's real
+ * href ("./") still works for new tabs and when the data failed to load.
+ */
+function goHome() {
+  closeAiMenu();
+  $('#toast').hidden = true;
+  state.category = 'all';
+  state.topic = null;
+  state.query = '';
+  $('#search').value = '';
+
+  if (state.focus) {
+    setFocus(null); // also cleans ?ai= from the URL and re-renders everything
+  } else {
+    if (location.search || location.hash) history.pushState(null, '', location.pathname);
+    applyFilters();
+  }
+  scrollTo({ top: 0, behavior: smoothBehavior() });
 }
 
 /* ---------- Data ---------------------------------------------------- */
@@ -856,6 +881,18 @@ function bindEvents() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden || !state.meta?.nextUpdateAt) return;
     if (Date.parse(state.meta.nextUpdateAt) <= Date.now()) poll().then(schedulePoll);
+  });
+
+  $('.brand').addEventListener('click', (e) => {
+    // Let cmd/ctrl/shift-click open a new tab or window as usual.
+    if (!state.data || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    goHome();
+  });
+
+  $('#to-top').addEventListener('click', () => {
+    scrollTo({ top: 0, behavior: smoothBehavior() });
+    $('.brand').focus({ preventScroll: true });
   });
 
   $('#ai-switch-btn').addEventListener('click', () => {
