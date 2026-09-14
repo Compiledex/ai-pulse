@@ -22,7 +22,7 @@ const state = {
   shown: PAGE_SIZE,
   lastVisit: null,
   focus: null, // the AI in focus (an entry of data.focus), or null for everything
-  meta: null, // { generatedAt, nextUpdateAt } of the newest snapshot seen, even if not shown yet
+  meta: null, // { generatedAt, nextUpdateAt, schedule } of the newest snapshot seen, even if not shown yet
 };
 
 let neural = null;
@@ -596,8 +596,8 @@ function renderHero() {
 
   const sources = state.data.sources.length;
   $('#lede').textContent = f
-    ? `Every story about ${f.name} across ${sources} sources${f.sources.length ? `, including ${f.maker}'s own announcements` : ''} — collected every hour, so you never miss a beat.`
-    : `Lab announcements, tech journalism, research papers and trending open models from ${sources} sources — collected every hour, so you never miss a beat.`;
+    ? `Every story about ${f.name} across ${sources} sources${f.sources.length ? `, including ${f.maker}'s own announcements` : ''} — collected every 30 minutes, so you never miss a beat.`
+    : `Lab announcements, tech journalism, research papers and trending open models from ${sources} sources — collected every 30 minutes, so you never miss a beat.`;
 
   neural?.setPalette(f ? [tint(f.color), tint(f.color, 0.35), tint(f.color, 0.65)] : null);
   document.title = f ? `${f.name} · AI Pulse` : 'AI Pulse';
@@ -631,7 +631,42 @@ function setFocus(id, { push = true } = {}) {
 /* ---------- Header & stats ------------------------------------------ */
 
 function metaOf(data) {
-  return { generatedAt: data.generatedAt, nextUpdateAt: data.nextUpdateAt ?? null };
+  return { generatedAt: data.generatedAt, nextUpdateAt: data.nextUpdateAt ?? null, schedule: data.schedule ?? null };
+}
+
+/** GitHub usually starts a scheduled run within this long of its slot, when it starts it at all. */
+const RUN_GRACE_MS = 15 * 60 * 1000;
+
+/**
+ * Where we are relative to the collection schedule:
+ *   { waiting, next, prev }  (ms timestamps of when snapshots should be live)
+ * `waiting` is true for a little while after a slot passes without a newer
+ * snapshot. Once that grace period is over the slot is treated as skipped and
+ * the countdown moves on to the following one, instead of reporting a delay forever.
+ * Returns null when the snapshot carries no schedule.
+ */
+function updateTiming(meta, now = Date.now()) {
+  if (meta.schedule?.minutes?.length) {
+    const lag = (meta.schedule.deployLagMinutes ?? 3) * 60 * 1000;
+    const hour = new Date(now);
+    hour.setUTCMinutes(0, 0, 0);
+    const times = [];
+    for (let h = -1; h <= 1; h++) {
+      for (const m of meta.schedule.minutes) times.push(hour.getTime() + h * HOUR + m * 60 * 1000 + lag);
+    }
+    const prev = Math.max(...times.filter((t) => t <= now));
+    const next = Math.min(...times.filter((t) => t > now));
+    const collected = Date.parse(meta.generatedAt);
+    // The run for `prev` started at prev - lag; a snapshot from before that means it hasn't landed.
+    const waiting = collected < prev - lag && now - prev < RUN_GRACE_MS;
+    return { waiting, next, prev };
+  }
+  if (meta.nextUpdateAt) {
+    // Older snapshots: a single expected time.
+    const next = Date.parse(meta.nextUpdateAt);
+    return { waiting: next <= now, next, prev: Date.parse(meta.generatedAt) };
+  }
+  return null;
 }
 
 function countdown(ms) {
@@ -651,23 +686,25 @@ function renderClock() {
   const fmt = (t) => new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
   $('#updated').textContent = timeAgo(meta.generatedAt, now);
-  $('#live').classList.toggle('stale', now - collected > 3 * HOUR);
+  $('#live').classList.toggle('stale', now - collected > 2 * HOUR);
 
+  const timing = updateTiming(meta, now);
   const next = $('#next');
-  next.hidden = !meta.nextUpdateAt;
-  if (!meta.nextUpdateAt) {
+  next.hidden = !timing;
+  if (!timing) {
     $('#live').title = `News collected at ${fmt(collected)}`;
     return;
   }
 
-  const target = Date.parse(meta.nextUpdateAt);
-  const left = target - now;
-  next.classList.toggle('due', left <= 0);
-  $('#next-in').textContent = left > 0 ? countdown(left) : left > -30 * 60 * 1000 ? 'soon' : 'delayed';
+  next.classList.toggle('due', timing.waiting);
+  $('#next-in').textContent = timing.waiting ? 'soon' : countdown(timing.next - now);
 
-  const progress = Math.min(1, Math.max(0, (now - collected) / (target - collected || 1)));
+  const progress = Math.min(1, Math.max(0, (now - timing.prev) / (timing.next - timing.prev || 1)));
   $('#ring-fill').style.strokeDashoffset = String(100 - progress * 100);
-  $('#live').title = `News collected at ${fmt(collected)}. Next collection expected around ${fmt(target)} — scheduled GitHub jobs sometimes start a few minutes late.`;
+
+  const slots = meta.schedule?.minutes?.map((m) => `:${String(m).padStart(2, '0')}`).join(' and ');
+  $('#live').title = `News collected at ${fmt(collected)}. `
+    + (slots ? `New collections are scheduled at ${slots} past each hour (UTC); GitHub sometimes starts one late or skips it.` : `Next collection expected around ${fmt(timing.next)}.`);
 }
 
 function countUp(el, target) {
@@ -841,22 +878,20 @@ async function poll() {
 let pollTimer;
 
 /**
- * Check for a new snapshot shortly after the next one is due, then every
- * minute while it's late (a slow GitHub runner), backing off if it's very late.
+ * Check for a new snapshot right after the next one should be live; while a
+ * run is running late, check every minute until it lands or counts as skipped.
  */
 function schedulePoll() {
   clearTimeout(pollTimer);
   const now = Date.now();
-  const due = state.meta?.nextUpdateAt ? Date.parse(state.meta.nextUpdateAt) : null;
+  const timing = state.meta ? updateTiming(state.meta, now) : null;
   let delay = POLL_MS;
-  if (due !== null) {
-    if (due > now) delay = Math.min(due - now + 15 * 1000, POLL_MS);
-    else delay = now - due < 30 * 60 * 1000 ? 60 * 1000 : 5 * 60 * 1000;
-  }
+  if (timing?.waiting) delay = 60 * 1000;
+  else if (timing) delay = Math.min(timing.next - now + 15 * 1000, POLL_MS);
   pollTimer = setTimeout(async () => {
     await poll();
     schedulePoll();
-  }, delay);
+  }, Math.max(delay, 5 * 1000));
 }
 
 /* ---------- Events -------------------------------------------------- */
@@ -894,8 +929,10 @@ function bindEvents() {
 
   // Coming back to a tab that slept through an update: check right away.
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden || !state.meta?.nextUpdateAt) return;
-    if (Date.parse(state.meta.nextUpdateAt) <= Date.now()) poll().then(schedulePoll);
+    if (document.hidden || !state.meta) return;
+    const timing = updateTiming(state.meta);
+    // Slept through a slot (or one is overdue): check right away.
+    if (timing && (timing.waiting || Date.parse(state.meta.generatedAt) < timing.prev)) poll().then(schedulePoll);
   });
 
   $('.brand').addEventListener('click', (e) => {

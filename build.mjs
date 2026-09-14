@@ -3,7 +3,7 @@
  *
  *   node build.mjs    -> dist/ (static site) + dist/data/news.json (the snapshot)
  *
- * Runs hourly in GitHub Actions. Every source is fetched independently, so one
+ * Runs every 30 minutes in GitHub Actions. Every source is fetched independently, so one
  * broken feed only removes (or freezes) that source — it never breaks the build.
  * The previous live snapshot is used as a cache: stories we already enriched
  * keep their images, and a source that is temporarily down keeps its last items.
@@ -18,7 +18,7 @@ import { dailyPapers, trendingModels, trendingModelsBy } from './lib/huggingface
 import {
   dropBoilerplateSummaries, mergeItems, normalizeEntries, reusePrevious,
 } from './lib/pipeline.mjs';
-import { nextUpdateAt } from './lib/schedule.mjs';
+import { scheduleInfo } from './lib/schedule.mjs';
 import { tagTopics, TOPICS } from './lib/topics.mjs';
 import { CATEGORIES, SOURCES } from './sources.mjs';
 
@@ -142,9 +142,14 @@ async function main() {
 
   const workflow = await readFile('.github/workflows/build.yml', 'utf8').catch(() => '');
 
+  const schedule = scheduleInfo(workflow, now);
+
   const snapshot = {
     generatedAt: new Date(now).toISOString(),
-    nextUpdateAt: nextUpdateAt(workflow, now),
+    // `schedule` lets the page skip past runs GitHub never started; `nextUpdateAt`
+    // stays for pages still running the previous version of app.js.
+    nextUpdateAt: schedule?.nextUpdateAt ?? null,
+    schedule: schedule && { minutes: schedule.minutes, deployLagMinutes: schedule.deployLagMinutes },
     categories: CATEGORIES,
     topics: TOPICS.map(({ id, label, kind }) => ({ id, label, kind })),
     sources: SOURCES.map(({ id, name, category, weight, color, home }) => ({

@@ -3,10 +3,13 @@ name: Collect news and deploy
 on:
   push:
     branches: [main]
-  # Hourly: the whole point of the site is that it's current without anyone
-  # touching it. Minute 7 avoids the top-of-hour rush on shared runners.
+  # Twice an hour: the whole point of the site is that it's current without
+  # anyone touching it. GitHub runs schedules on a best-effort basis and drops
+  # some under load (worst around the top of the hour), so two slots well away
+  # from :00 keep a skipped run from leaving the site hours out of date.
+  # The page's countdown reads this line — see lib/schedule.mjs.
   schedule:
-    - cron: '7 * * * *'
+    - cron: '17,47 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -58,7 +61,7 @@ jobs:
 
   # GitHub switches off scheduled workflows in repos with no commits for 60
   # days. The site deploys artifacts rather than committing, so without this
-  # the hourly refresh would silently stop two months after the last push.
+  # the scheduled refresh would silently stop two months after the last push.
   keepalive:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
@@ -73,7 +76,7 @@ jobs:
           if [ $(( $(date +%s) - last_commit )) -gt $(( 50 * 86400 )) ]; then
             git config user.name 'github-actions[bot]'
             git config user.email '41898283+github-actions[bot]@users.noreply.github.com'
-            git commit --allow-empty -m 'chore: keep hourly news collection enabled'
+            git commit --allow-empty -m 'chore: keep scheduled news collection enabled'
             git push
           else
             echo "Last commit is recent enough; nothing to do."
