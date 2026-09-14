@@ -348,13 +348,15 @@ button, input { font: inherit; color: inherit; }
 
 .hero h1 {
   margin: 0;
-  max-width: 13ch;
   font: 600 clamp(44px, 8.4vw, 112px)/0.95 var(--font-display);
   letter-spacing: -0.045em;
 }
 
 .hero h1 em {
-  display: inline-block;
+  /* Always on its own line, so every AI's headline has the same shape. */
+  display: block;
+  width: fit-content;
+  max-width: 100%;
   font: italic 400 1.08em/0.9 var(--font-serif);
   letter-spacing: -0.02em;
   padding-right: 0.08em;
@@ -1211,6 +1213,47 @@ button, input { font: inherit; color: inherit; }
   color: var(--dim);
 }
 
+.focus-pill {
+  --c: var(--violet);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--c) 60%, transparent);
+  background: color-mix(in srgb, var(--c) 14%, transparent);
+  box-shadow: 0 0 20px -6px color-mix(in srgb, var(--c) 70%, transparent);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  animation: panel-in 0.5s var(--ease-out);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.focus-pill .tab-logo {
+  width: 16px;
+  height: 16px;
+  color: color-mix(in srgb, var(--c) 35%, white);
+  filter: drop-shadow(0 0 2px var(--c)) drop-shadow(0 0 7px var(--c));
+}
+
+.focus-pill .x {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--muted);
+  transition: background 0.2s, color 0.2s;
+}
+
+.focus-pill:hover { background: color-mix(in srgb, var(--c) 22%, transparent); }
+.focus-pill:hover .x { background: rgba(255, 255, 255, 0.22); color: var(--text); }
+
 .search {
   position: relative;
   flex: 1 1 220px;
@@ -1303,7 +1346,6 @@ button, input { font: inherit; color: inherit; }
 
 .chip small { margin-left: 4px; font-family: var(--font-mono); opacity: 0.6; }
 
-.chip-sep { width: 1px; margin: 4px 6px; background: var(--border); }
 
 /* ---------- Feed ----------------------------------------------------- */
 

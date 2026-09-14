@@ -236,6 +236,11 @@ function moveIndicator() {
   indicator.style.transform = `translateX(${active.offsetLeft}px)`;
 }
 
+/**
+ * Topic chips narrow the feed by theme (Agents, Policy…). Companies are left
+ * out on purpose: picking an AI is done in one place only, the focus tabs,
+ * which change the whole page — a second, feed-only company filter fought it.
+ */
 function renderChips() {
   const counts = new Map();
   for (const item of state.data.items) {
@@ -244,15 +249,23 @@ function renderChips() {
   }
 
   const chip = (t) => `<button class="chip" data-topic="${esc(t.id)}" aria-pressed="${state.topic === t.id}">${esc(t.label)}<small>${counts.get(t.id) ?? 0}</small></button>`;
-  const visible = (kind) => state.data.topics
-    .filter((t) => t.kind === kind && t.id !== state.focus?.topic && (counts.get(t.id) || state.topic === t.id))
-    .sort((a, b) => (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0));
+  $('#topics').innerHTML = state.data.topics
+    .filter((t) => t.kind === 'theme' && (counts.get(t.id) || state.topic === t.id))
+    .sort((a, b) => (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0))
+    .map(chip)
+    .join('');
+}
 
-  $('#topics').innerHTML = [
-    ...visible('company').map(chip),
-    '<span class="chip-sep" aria-hidden="true"></span>',
-    ...visible('theme').map(chip),
-  ].join('');
+/** In the feed controls: which AI the feed is limited to, with a way back to all. */
+function renderFocusPill() {
+  const f = state.focus;
+  const pill = $('#focus-pill');
+  pill.hidden = !f;
+  if (!f) return;
+  pill.style.setProperty('--c', f.color);
+  pill.title = `Showing only ${f.name} stories. Click to show all AI.`;
+  pill.innerHTML = `${logo(f.id, 'tab-logo') || '<span class="swatch" aria-hidden="true"></span>'}<span>${esc(f.name)} only</span><span class="x" aria-hidden="true">×</span>`;
+  $('#feed-intro').textContent = `Every ${f.name} story from the last 30 days, newest first. Narrow it down by source type or topic.`;
 }
 
 /* ---------- Feed ---------------------------------------------------- */
@@ -463,7 +476,9 @@ function renderFocusPanel() {
   }).join('');
 
   const topicCounts = new Map();
-  for (const i of items) for (const t of i.topics) if (t !== f.topic) topicCounts.set(t, (topicCounts.get(t) ?? 0) + 1);
+  for (const i of items) {
+    for (const t of i.topics) if (state.topics.get(t)?.kind === 'theme') topicCounts.set(t, (topicCounts.get(t) ?? 0) + 1);
+  }
   const topics = [...topicCounts].sort((a, b) => b[1] - a[1]).slice(0, 8)
     .map(([id, n]) => `<button class="chip" data-focus-topic="${esc(id)}">${esc(state.topics.get(id)?.label ?? id)}<small>${n}</small></button>`)
     .join('');
@@ -522,13 +537,14 @@ function renderHero() {
   neural?.setPalette(f ? [tint(f.color), tint(f.color, 0.35), tint(f.color, 0.65)] : null);
   document.title = f ? `${f.name} · AI Pulse` : 'AI Pulse';
   $('#feed-heading').innerHTML = f ? `Latest on <em>${esc(f.name)}</em>` : 'Latest <em>stories</em>';
+  if (!f) $('#feed-intro').textContent = "Everything from the last 30 days, newest first. Filter by where it came from or what it's about.";
+  renderFocusPill();
 }
 
 function setFocus(id, { push = true } = {}) {
   const f = focusById(id);
   if ((f?.id ?? null) === (state.focus?.id ?? null) && push) return;
   state.focus = f;
-  if (f && state.topic === f.topic) state.topic = null;
   state.shown = PAGE_SIZE;
 
   if (push) {
@@ -777,6 +793,8 @@ function bindEvents() {
     if (document.hidden || !state.meta?.nextUpdateAt) return;
     if (Date.parse(state.meta.nextUpdateAt) <= Date.now()) poll().then(schedulePoll);
   });
+
+  $('#focus-pill').addEventListener('click', () => setFocus(null));
 
   $('#tabs').addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
