@@ -1,0 +1,16 @@
+{
+  "name": "ai-pulse",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A self-updating AI news hub: lab announcements, tech press, research papers and trending models, refreshed every hour.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test",
+    "serve": "node serve.mjs",
+    "dev": "node build.mjs && node serve.mjs"
+  }
+}
