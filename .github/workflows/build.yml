@@ -1,0 +1,80 @@
+name: Collect news and deploy
+
+on:
+  push:
+    branches: [main]
+  # Hourly: the whole point of the site is that it's current without anyone
+  # touching it. Minute 7 avoids the top-of-hour rush on shared runners.
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Queue deploys instead of cancelling, so a scheduled run can't discard a
+# push-triggered one halfway through.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test
+        run: node --test
+
+      # Fails (and so skips the deploy, leaving the live site untouched) only
+      # if almost nothing could be collected. Individual broken sources are
+      # reported in the snapshot instead.
+      - name: Collect news and build
+        run: node build.mjs
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  # GitHub switches off scheduled workflows in repos with no commits for 60
+  # days. The site deploys artifacts rather than committing, so without this
+  # the hourly refresh would silently stop two months after the last push.
+  keepalive:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Empty commit if the repo has been quiet for 50 days
+        run: |
+          last_commit=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - last_commit )) -gt $(( 50 * 86400 )) ]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898283+github-actions[bot]@users.noreply.github.com'
+            git commit --allow-empty -m 'chore: keep hourly news collection enabled'
+            git push
+          else
+            echo "Last commit is recent enough; nothing to do."
+          fi
