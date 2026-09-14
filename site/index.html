@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Pulse</title>
+  <meta name="description" content="A live, self-updating hub for AI news: lab announcements, tech press, research papers and trending open models — refreshed every hour.">
+  <meta name="theme-color" content="#05060b">
+  <meta property="og:title" content="AI Pulse">
+  <meta property="og:description" content="Everything happening in AI, collected every hour from 19 sources.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div class="progress" aria-hidden="true"></div>
+  <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="nav" id="nav">
+    <div class="wrap">
+      <a class="brand" href="#top" aria-label="AI Pulse — back to top">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24">
+            <defs>
+              <linearGradient id="pulse-gradient" x1="0" x2="1">
+                <stop offset="0" stop-color="#a78bfa"/><stop offset=".5" stop-color="#22d3ee"/><stop offset="1" stop-color="#f472b6"/>
+              </linearGradient>
+            </defs>
+            <path d="M2 12h4.5l2-5 3.5 11 3-8 1.8 2H22"/>
+          </svg>
+        </span>
+        AI Pulse
+      </a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#latest">Latest</a>
+        <a href="#models">Models</a>
+        <a href="#papers">Papers</a>
+        <a href="#sources">Sources</a>
+      </nav>
+      <div class="live" id="live" title="When the news snapshot was last collected">
+        <span class="dot" aria-hidden="true"></span>
+        <span><span class="live-label">Updated </span><span id="updated">…</span></span>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <canvas id="neural" aria-hidden="true"></canvas>
+      <div class="wrap">
+        <p class="eyebrow enter" style="--i:0"><b>Live</b><span id="today">Today in AI</span></p>
+        <h1 class="enter" style="--i:1">The pulse of <em>artificial intelligence</em></h1>
+        <p class="lede enter" style="--i:2">
+          Lab announcements, tech journalism, research papers and trending open models from
+          <span id="source-count">19</span> sources — collected every hour, so you never miss a beat.
+        </p>
+        <div class="stats enter" style="--i:3">
+          <div class="stat"><strong data-count="stories-24h">0</strong><span>stories in 24 hours</span></div>
+          <div class="stat"><strong data-count="stories-week">0</strong><span>stories this week</span></div>
+          <div class="stat"><strong data-count="papers">0</strong><span>papers trending</span></div>
+          <div class="stat"><strong data-count="new">0</strong><span id="new-label">new since your last visit</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap" aria-labelledby="top-heading">
+      <h2 class="sr-only" id="top-heading">Top stories</h2>
+      <div class="top" id="top-stories">
+        <div class="featured skeleton"></div>
+        <ol class="top-list">
+          <li class="skeleton" style="height:104px"></li>
+          <li class="skeleton" style="height:104px"></li>
+          <li class="skeleton" style="height:104px"></li>
+          <li class="skeleton" style="height:104px"></li>
+        </ol>
+      </div>
+    </section>
+
+    <div class="ticker" aria-label="Latest headlines">
+      <div class="ticker-label"><span class="dot" aria-hidden="true"></span>Latest</div>
+      <div class="ticker-viewport"><div class="ticker-track" id="ticker"></div></div>
+    </div>
+
+    <section class="section wrap" id="latest">
+      <div class="section-head">
+        <div>
+          <p class="kicker">The feed</p>
+          <h2>Latest <em>stories</em></h2>
+        </div>
+        <p>Everything from the last 30 days, newest first. Filter by where it came from or what it's about.</p>
+      </div>
+
+      <div class="controls" id="controls">
+        <div class="tabs" role="tablist" aria-label="Source type" id="tabs">
+          <span class="tab-indicator" aria-hidden="true"></span>
+        </div>
+        <label class="search">
+          <span class="sr-only">Search stories</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="search" id="search" placeholder="Search headlines…" autocomplete="off">
+          <kbd aria-hidden="true">/</kbd>
+        </label>
+      </div>
+
+      <div class="chips" id="topics" aria-label="Topics"></div>
+
+      <div id="feed" aria-live="polite">
+        <div class="grid">
+          <div class="skeleton" style="height:340px"></div>
+          <div class="skeleton" style="height:340px"></div>
+          <div class="skeleton" style="height:340px"></div>
+        </div>
+      </div>
+      <div class="more"><button class="btn" id="more" hidden>Show more stories</button></div>
+    </section>
+
+    <section class="section wrap" id="models">
+      <div class="section-head">
+        <div>
+          <p class="kicker">Hugging Face</p>
+          <h2>Trending <em>models</em></h2>
+        </div>
+        <div class="scroll-btns">
+          <button class="icon-btn" data-scroll="-1" aria-label="Scroll models left">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <button class="icon-btn" data-scroll="1" aria-label="Scroll models right">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="scroller" id="model-list"></div>
+    </section>
+
+    <section class="section wrap" id="papers">
+      <div class="section-head">
+        <div>
+          <p class="kicker">Research</p>
+          <h2>Papers <em>everyone's reading</em></h2>
+        </div>
+        <p>The most upvoted papers on Hugging Face Daily Papers over the last few days, with a one-line summary.</p>
+      </div>
+      <div class="papers" id="paper-list"></div>
+    </section>
+
+    <section class="section wrap" id="sources">
+      <div class="section-head">
+        <div>
+          <p class="kicker">Transparency</p>
+          <h2>Where it <em>comes from</em></h2>
+        </div>
+        <p>Status of every source at the last collection. If one is down, its most recent stories are kept until it recovers.</p>
+      </div>
+      <div class="source-groups" id="source-list"></div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>AI Pulse refreshes every hour via GitHub Actions. Headlines and images belong to their publishers.</span>
+      <span>Built by <a href="https://compiledex.github.io/">Alex</a> · <a href="https://github.com/Compiledex/ai-pulse">Source on GitHub</a></span>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>
