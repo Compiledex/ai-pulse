@@ -135,7 +135,7 @@ button, input { font: inherit; color: inherit; }
   z-index: 100;
   background: var(--spectrum);
   transform-origin: 0 50%;
-  transform: scaleX(var(--scroll, 0));
+  transform: scaleX(0); /* set by app.js as you scroll */
 }
 
 /* ---------- Navigation ----------------------------------------------- */
@@ -1967,8 +1967,9 @@ footer a:hover { color: var(--text); }
 .scroll-ring .bar {
   stroke: url(#pulse-gradient);
   stroke-linecap: round;
-  stroke-dasharray: 100;
-  stroke-dashoffset: calc(100 - var(--scroll, 0) * 100);
+  /* The gap is longer than the ring, so no offset can wrap a second dash into view. */
+  stroke-dasharray: 100 200;
+  stroke-dashoffset: 100; /* set by app.js as you scroll */
   filter: drop-shadow(0 0 4px rgba(34, 211, 238, 0.6));
 }
 

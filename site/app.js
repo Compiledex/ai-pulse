@@ -716,9 +716,24 @@ function observeReveals() {
   $$('.reveal:not(.in)').forEach((el) => revealObserver.observe(el));
 }
 
+let shownProgress = -1;
+
 function onScroll() {
-  const max = document.documentElement.scrollHeight - innerHeight;
-  document.documentElement.style.setProperty('--scroll', max > 0 ? (scrollY / max).toFixed(4) : 0);
+  const root = document.scrollingElement ?? document.documentElement;
+  const max = root.scrollHeight - root.clientHeight;
+  // Clamp to 0–1. Elastic overscroll (macOS rubber-banding when you keep
+  // pushing past the bottom or top) reports positions beyond the page, which
+  // made the ring open a gap and the top bar misbehave until you let go.
+  const progress = max > 0 ? Math.min(1, Math.max(0, root.scrollTop / max)) : 0;
+  const rounded = Math.round(progress * 1000) / 1000;
+  if (rounded !== shownProgress) {
+    shownProgress = rounded;
+    // Written straight onto the two elements: a custom property on <html>
+    // re-styled the whole document on every scroll frame.
+    $('.progress').style.transform = `scaleX(${rounded})`;
+    $('#to-top .bar').style.strokeDashoffset = String(100 - rounded * 100);
+  }
+
   $('#nav').classList.toggle('scrolled', scrollY > 20);
   $('#to-top').classList.toggle('show', scrollY > innerHeight * 0.9);
   const controls = $('#controls');
@@ -1006,6 +1021,9 @@ function bindEvents() {
   }, { passive: true });
 
   addEventListener('resize', moveIndicator);
+  // The page grows and shrinks without scrolling ("Show more", filters, images
+  // loading); keep the progress bar and ring honest when it does.
+  new ResizeObserver(() => onScroll()).observe(document.body);
   document.fonts?.ready.then(moveIndicator);
 }
 
