@@ -45,7 +45,7 @@ lib/pipeline.mjs     pure transforms: normalise, merge, de-duplicate, cache reus
 lib/topics.mjs       keyword topic tagging
 lib/schedule.mjs     next-update time from the workflow's cron
 lib/text.mjs         entity decoding, HTML → text, URL keys
-site/                the static front end (index.html, styles.css, app.js, neural.js, art.js)
+site/                the static front end (index.html, styles.css, app.js, neural.js, art.js, logos.js)
 test/                unit tests (node:test), no network required
 ```
 
@@ -64,3 +64,5 @@ npm run serve    # serve without re-collecting
 ---
 
 Headlines, summaries and images belong to their respective publishers; every story links to the original.
+
+AI logos come from [LobeHub Icons](https://github.com/lobehub/lobe-icons) (MIT) and are trademarks of their owners, used only to identify each product.

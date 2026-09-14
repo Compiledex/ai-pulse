@@ -1,4 +1,5 @@
 import { coverArt } from './art.js';
+import { logo } from './logos.js';
 import { startNeural } from './neural.js';
 
 const DATA_URL = 'data/news.json';
@@ -393,7 +394,7 @@ function renderFocusTabs() {
     const count = f ? state.data.items.filter((i) => inFocus(i, f)).length : state.data.items.length;
     const selected = (state.focus?.id ?? null) === (f?.id ?? null);
     return `<button class="focus-tab${f ? '' : ' all'}" role="tab" aria-selected="${selected}" data-focus="${esc(f?.id ?? '')}" ${f ? `style="--c:${esc(f.color)}"` : ''}>
-      <span class="swatch" aria-hidden="true"></span>${esc(f?.name ?? 'All AI')}<small>${count}</small></button>`;
+      ${(f && logo(f.id, 'tab-logo')) || '<span class="swatch" aria-hidden="true"></span>'}${esc(f?.name ?? 'All AI')}<small>${count}</small></button>`;
   };
   const row = $('#focus-tabs');
   row.innerHTML = [tab(null), ...list.map(tab)].join('');
@@ -472,7 +473,9 @@ function renderFocusPanel() {
   panel.innerHTML = `
     <div class="profile">
       <div class="profile-head">
-        <span class="monogram" aria-hidden="true">${esc(f.name[0])}</span>
+        ${logo(f.id)
+    ? `<span class="monogram neon" aria-hidden="true">${logo(f.id)}</span>`
+    : `<span class="monogram" aria-hidden="true">${esc(f.name[0])}</span>`}
         <div>
           <p class="maker">by ${esc(f.maker)}</p>
           <h2>${esc(f.name)}</h2>

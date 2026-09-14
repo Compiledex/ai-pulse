@@ -557,6 +557,21 @@ button, input { font: inherit; color: inherit; }
   box-shadow: 0 0 10px var(--c);
 }
 
+.focus-tab .tab-logo {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  color: color-mix(in srgb, var(--c) 50%, white);
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--c) 75%, transparent));
+  transition: filter 0.3s, color 0.3s;
+}
+
+.focus-tab:hover .tab-logo,
+.focus-tab[aria-selected='true'] .tab-logo {
+  color: color-mix(in srgb, var(--c) 35%, white);
+  filter: drop-shadow(0 0 2px var(--c)) drop-shadow(0 0 8px var(--c));
+}
+
 .focus-tab.all .swatch { background: var(--spectrum); box-shadow: 0 0 10px rgba(167, 139, 250, 0.7); }
 
 .focus-tab small {
@@ -644,6 +659,53 @@ button, input { font: inherit; color: inherit; }
 @keyframes halo {
   0% { transform: scale(0.92); opacity: 1; }
   100% { transform: scale(1.25); opacity: 0; }
+}
+
+/* Logo variant: a dark glass tile with the mark lit up like a neon sign. */
+.monogram.neon {
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--c) 30%, transparent), transparent 70%),
+    #07080f;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent);
+  color: color-mix(in srgb, var(--c) 45%, white);
+  box-shadow:
+    0 0 24px -4px color-mix(in srgb, var(--c) 60%, transparent),
+    inset 0 0 20px -6px color-mix(in srgb, var(--c) 55%, transparent);
+}
+
+.monogram .logo {
+  width: 38px;
+  height: 38px;
+  filter:
+    drop-shadow(0 0 1.5px var(--c))
+    drop-shadow(0 0 7px var(--c))
+    drop-shadow(0 0 18px color-mix(in srgb, var(--c) 70%, transparent));
+  /* Flickers on like a neon tube when the AI is picked, then gently hums. */
+  animation: neon-on 1s steps(1, end) both, neon-hum 3.6s ease-in-out 1s infinite;
+}
+
+@keyframes neon-on {
+  0% { opacity: 0; }
+  10% { opacity: 0.9; }
+  18% { opacity: 0.15; }
+  30% { opacity: 1; }
+  42% { opacity: 0.4; }
+  52%, 100% { opacity: 1; }
+}
+
+@keyframes neon-hum {
+  0%, 100% {
+    filter:
+      drop-shadow(0 0 1.5px var(--c))
+      drop-shadow(0 0 7px var(--c))
+      drop-shadow(0 0 18px color-mix(in srgb, var(--c) 70%, transparent));
+  }
+  50% {
+    filter:
+      drop-shadow(0 0 1px var(--c))
+      drop-shadow(0 0 4px var(--c))
+      drop-shadow(0 0 10px color-mix(in srgb, var(--c) 45%, transparent));
+  }
 }
 
 .profile .maker {
