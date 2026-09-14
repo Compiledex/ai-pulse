@@ -20,7 +20,11 @@ const state = {
   query: '',
   shown: PAGE_SIZE,
   lastVisit: null,
+  focus: null, // the AI in focus (an entry of data.focus), or null for everything
+  meta: null, // { generatedAt, nextUpdateAt } of the newest snapshot seen, even if not shown yet
 };
+
+let neural = null;
 
 /* ---------- Formatting ---------------------------------------------- */
 
@@ -77,6 +81,29 @@ function sourceOf(item) {
   return state.sources.get(item.source) ?? { name: item.source, color: '#a78bfa', category: 'press' };
 }
 
+/* ---------- AI focus ------------------------------------------------ */
+
+const focusById = (id) => state.data?.focus?.find((f) => f.id === id) ?? null;
+
+/** A story is about an AI if it mentions it, or comes from the maker's own blog. */
+function inFocus(item, focus = state.focus) {
+  if (!focus) return true;
+  return item.topics.includes(focus.topic) || focus.sources.includes(item.source);
+}
+
+/** Every story in the current focus, newest first. */
+const pool = () => state.data.items.filter((i) => inFocus(i));
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** "r,g,b" of `hex` mixed toward white by `amount` (0–1). */
+function tint(hex, amount = 0) {
+  return hexToRgb(hex).map((c) => Math.round(c + (255 - c) * amount)).join(',');
+}
+
 function isNew(item) {
   return state.lastVisit !== null && Date.parse(item.published) > state.lastVisit;
 }
@@ -127,8 +154,11 @@ function pickTopStories(items, now) {
 
 function renderTop() {
   const now = Date.now();
-  const [featured, ...rest] = pickTopStories(state.data.items, now);
-  if (!featured) return;
+  const [featured, ...rest] = pickTopStories(pool(), now);
+  if (!featured) {
+    $('#top-stories').innerHTML = `<div class="empty" style="grid-column:1/-1"><strong>No ${esc(state.focus?.name ?? '')} stories in the last 30 days.</strong>Check back after the next update, or pick another AI.</div>`;
+    return;
+  }
   const fsrc = sourceOf(featured);
 
   $('#top-stories').innerHTML = `
@@ -159,7 +189,8 @@ function renderTop() {
 /* ---------- Ticker -------------------------------------------------- */
 
 function renderTicker() {
-  const items = state.data.items.slice(0, 24);
+  const items = pool().slice(0, 24);
+  $('.ticker').hidden = !items.length;
   const html = items.map((item) => {
     const src = sourceOf(item);
     return `<a href="${esc(safeUrl(item.url))}" target="_blank" rel="noopener" style="--accent:${esc(src.color)}"><b>${esc(src.name)}</b>${esc(item.title)}</a>`;
@@ -175,6 +206,7 @@ function renderTicker() {
 /* ---------- Filters ------------------------------------------------- */
 
 function matches(item, { category = state.category, topic = state.topic, query = state.query } = {}) {
+  if (!inFocus(item)) return false;
   if (category !== 'all' && sourceOf(item).category !== category) return false;
   if (topic && !item.topics.includes(topic)) return false;
   if (query) {
@@ -212,7 +244,7 @@ function renderChips() {
 
   const chip = (t) => `<button class="chip" data-topic="${esc(t.id)}" aria-pressed="${state.topic === t.id}">${esc(t.label)}<small>${counts.get(t.id) ?? 0}</small></button>`;
   const visible = (kind) => state.data.topics
-    .filter((t) => t.kind === kind && (counts.get(t.id) || state.topic === t.id))
+    .filter((t) => t.kind === kind && t.id !== state.focus?.topic && (counts.get(t.id) || state.topic === t.id))
     .sort((a, b) => (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0));
 
   $('#topics').innerHTML = [
@@ -350,14 +382,209 @@ function renderSources() {
   $('#source-list').innerHTML = groups.join('');
 }
 
+/* ---------- AI focus views ------------------------------------------ */
+
+const ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg>';
+
+function renderFocusTabs() {
+  const list = state.data.focus ?? [];
+  $('#focus').hidden = !list.length;
+  const tab = (f) => {
+    const count = f ? state.data.items.filter((i) => inFocus(i, f)).length : state.data.items.length;
+    const selected = (state.focus?.id ?? null) === (f?.id ?? null);
+    return `<button class="focus-tab${f ? '' : ' all'}" role="tab" aria-selected="${selected}" data-focus="${esc(f?.id ?? '')}" ${f ? `style="--c:${esc(f.color)}"` : ''}>
+      <span class="swatch" aria-hidden="true"></span>${esc(f?.name ?? 'All AI')}<small>${count}</small></button>`;
+  };
+  const row = $('#focus-tabs');
+  row.innerHTML = [tab(null), ...list.map(tab)].join('');
+
+  // On phones the row scrolls sideways; keep the selected AI in view.
+  // (Set scrollLeft directly — scrollIntoView would also scroll the page.)
+  const selected = $('.focus-tab[aria-selected="true"]', row);
+  if (selected && row.scrollWidth > row.clientWidth) {
+    row.scrollLeft = selected.offsetLeft - (row.clientWidth - selected.offsetWidth) / 2;
+  }
+}
+
+function renderFocusPanel() {
+  const panel = $('#focus-panel');
+  const f = state.focus;
+  if (!f) {
+    panel.hidden = true;
+    panel.innerHTML = '';
+    return;
+  }
+
+  const now = Date.now();
+  const items = pool();
+  const within = (ms) => items.filter((i) => now - Date.parse(i.published) < ms).length;
+
+  const bySource = new Map();
+  for (const i of items) bySource.set(i.source, (bySource.get(i.source) ?? 0) + 1);
+  const coverage = [...bySource].sort((a, b) => b[1] - a[1]).slice(0, 4)
+    .map(([id, n]) => `<span class="src" style="--accent:${esc(state.sources.get(id)?.color ?? '#a78bfa')}">${esc(state.sources.get(id)?.name ?? id)}<small>${n}</small></span>`)
+    .join('');
+
+  const official = items.find((i) => f.sources.includes(i.source));
+  const lead = official ?? items[0];
+  const leadHtml = lead
+    ? (() => {
+      const src = sourceOf(lead);
+      return `
+      <article class="focus-block">
+        <h3>${official ? `Latest from ${esc(f.maker)}` : 'Latest headline'}</h3>
+        <div class="official">
+          <div class="thumb">${media(lead, src.name, src.color)}</div>
+          <div>
+            <div class="meta">${sourceBadge(lead)}<time datetime="${esc(lead.published)}">${timeAgo(lead.published, now)}</time></div>
+            <h4><a class="stretch" href="${esc(safeUrl(lead.url))}" target="_blank" rel="noopener">${esc(lead.title)}</a></h4>
+            ${lead.summary ? `<p>${esc(lead.summary)}</p>` : ''}
+          </div>
+        </div>
+      </article>`;
+    })()
+    : `<div class="focus-block"><h3>Latest headline</h3><p class="blurb" style="margin:0;color:var(--muted)">Nothing about ${esc(f.name)} in the last 30 days.</p></div>`;
+
+  const models = (f.models ?? []).map((m) => {
+    const initial = esc(m.owner[0]?.toUpperCase());
+    const avatar = m.avatar
+      ? `<img class="avatar" src="${esc(safeUrl(m.avatar))}" alt="" loading="lazy" referrerpolicy="no-referrer" data-initial="${initial}">`
+      : `<span class="avatar">${initial}</span>`;
+    return `
+      <li class="model-row">
+        ${avatar}
+        <div><b><a class="stretch" href="${esc(safeUrl(m.url))}" target="_blank" rel="noopener">${esc(m.name)}</a></b><span>${esc(humanTask(m.task))}</span></div>
+        <div class="numbers">
+          <span title="Likes">♥ ${compact(m.likes)}</span>
+          <span title="Downloads">↓ ${compact(m.downloads)}</span>
+        </div>
+      </li>`;
+  }).join('');
+
+  const topicCounts = new Map();
+  for (const i of items) for (const t of i.topics) if (t !== f.topic) topicCounts.set(t, (topicCounts.get(t) ?? 0) + 1);
+  const topics = [...topicCounts].sort((a, b) => b[1] - a[1]).slice(0, 8)
+    .map(([id, n]) => `<button class="chip" data-focus-topic="${esc(id)}">${esc(state.topics.get(id)?.label ?? id)}<small>${n}</small></button>`)
+    .join('');
+
+  panel.style.setProperty('--c', f.color);
+  panel.hidden = false;
+  panel.innerHTML = `
+    <div class="profile">
+      <div class="profile-head">
+        <span class="monogram" aria-hidden="true">${esc(f.name[0])}</span>
+        <div>
+          <p class="maker">by ${esc(f.maker)}</p>
+          <h2>${esc(f.name)}</h2>
+        </div>
+      </div>
+      <p class="blurb">${esc(f.blurb)}</p>
+      <div class="focus-links">
+        ${f.links.map((l) => `<a class="focus-link" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">${esc(l.label)}${ARROW}</a>`).join('')}
+      </div>
+      ${coverage ? `<div class="coverage">Most coverage from ${coverage}</div>` : ''}
+      <div class="mini-stats">
+        <div><strong>${within(DAY)}</strong><span>24 hours</span></div>
+        <div><strong>${within(7 * DAY)}</strong><span>7 days</span></div>
+        <div><strong>${items.length}</strong><span>30 days</span></div>
+      </div>
+    </div>
+    <div class="focus-side">
+      ${leadHtml}
+      ${models ? `<div class="focus-block"><h3>Trending open models</h3><ul class="model-rows">${models}</ul></div>` : ''}
+      ${topics ? `<div class="focus-block"><h3>What the coverage is about</h3><div class="topic-cloud">${topics}</div></div>` : ''}
+    </div>`;
+}
+
+/** Hero headline, lede, canvas colours and page title follow the focus. */
+function renderHero() {
+  const f = state.focus;
+  const subject = $('#hero-subject');
+  const text = f ? f.name : 'artificial intelligence';
+  if (subject.textContent !== text) {
+    subject.textContent = text;
+    subject.classList.remove('swap');
+    void subject.offsetWidth; // restart the swap-in animation
+    subject.classList.add('swap');
+  }
+  subject.style.setProperty('--subject-gradient', f
+    ? `linear-gradient(100deg, ${f.color} 0%, rgb(${tint(f.color, 0.55)}) 35%, ${f.color} 70%, rgb(${tint(f.color, 0.55)}) 100%)`
+    : null);
+
+  const sources = state.data.sources.length;
+  $('#lede').textContent = f
+    ? `Every story about ${f.name} across ${sources} sources${f.sources.length ? `, including ${f.maker}'s own announcements` : ''} — collected every hour, so you never miss a beat.`
+    : `Lab announcements, tech journalism, research papers and trending open models from ${sources} sources — collected every hour, so you never miss a beat.`;
+
+  neural?.setPalette(f ? [tint(f.color), tint(f.color, 0.35), tint(f.color, 0.65)] : null);
+  document.title = f ? `${f.name} · AI Pulse` : 'AI Pulse';
+  $('#feed-heading').innerHTML = f ? `Latest on <em>${esc(f.name)}</em>` : 'Latest <em>stories</em>';
+}
+
+function setFocus(id, { push = true } = {}) {
+  const f = focusById(id);
+  if ((f?.id ?? null) === (state.focus?.id ?? null) && push) return;
+  state.focus = f;
+  if (f && state.topic === f.topic) state.topic = null;
+  state.shown = PAGE_SIZE;
+
+  if (push) {
+    const url = new URL(location.href);
+    if (f) url.searchParams.set('ai', f.id);
+    else url.searchParams.delete('ai');
+    url.hash = '';
+    history.pushState(null, '', url);
+  }
+
+  renderHero();
+  renderFocusTabs();
+  renderFocusPanel();
+  renderStats();
+  renderTop();
+  renderTicker();
+  applyFilters();
+}
+
 /* ---------- Header & stats ------------------------------------------ */
 
-function renderUpdated() {
-  if (!state.data) return;
-  const age = Date.now() - Date.parse(state.data.generatedAt);
-  $('#updated').textContent = timeAgo(state.data.generatedAt);
-  $('#live').classList.toggle('stale', age > 3 * HOUR);
-  $('#live').title = `News collected ${new Date(state.data.generatedAt).toLocaleString('en-GB')}`;
+function metaOf(data) {
+  return { generatedAt: data.generatedAt, nextUpdateAt: data.nextUpdateAt ?? null };
+}
+
+function countdown(ms) {
+  const total = Math.ceil(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
+/** "Updated 14m ago" plus a live countdown and progress ring to the next snapshot. Runs every second. */
+function renderClock() {
+  const meta = state.meta;
+  if (!meta) return;
+  const now = Date.now();
+  const collected = Date.parse(meta.generatedAt);
+  const fmt = (t) => new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+  $('#updated').textContent = timeAgo(meta.generatedAt, now);
+  $('#live').classList.toggle('stale', now - collected > 3 * HOUR);
+
+  const next = $('#next');
+  next.hidden = !meta.nextUpdateAt;
+  if (!meta.nextUpdateAt) {
+    $('#live').title = `News collected at ${fmt(collected)}`;
+    return;
+  }
+
+  const target = Date.parse(meta.nextUpdateAt);
+  const left = target - now;
+  next.classList.toggle('due', left <= 0);
+  $('#next-in').textContent = left > 0 ? countdown(left) : left > -30 * 60 * 1000 ? 'soon' : 'delayed';
+
+  const progress = Math.min(1, Math.max(0, (now - collected) / (target - collected || 1)));
+  $('#ring-fill').style.strokeDashoffset = String(100 - progress * 100);
+  $('#live').title = `News collected at ${fmt(collected)}. Next collection expected around ${fmt(target)} — scheduled GitHub jobs sometimes start a few minutes late.`;
 }
 
 function countUp(el, target) {
@@ -374,7 +601,8 @@ function countUp(el, target) {
 
 function renderStats() {
   const now = Date.now();
-  const { items, sources, papers } = state.data;
+  const { sources, papers } = state.data;
+  const items = pool();
   const live = sources.filter((s) => s.status?.ok).length;
   const newCount = items.filter(isNew).length;
 
@@ -385,7 +613,6 @@ function renderStats() {
     new: state.lastVisit === null ? live : newCount,
   };
   $('#new-label').textContent = state.lastVisit === null ? 'sources live right now' : 'new since your last visit';
-  $('#source-count').textContent = sources.length;
   $('#today').textContent = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
   for (const el of $$('[data-count]')) countUp(el, values[el.dataset.count] ?? 0);
@@ -447,7 +674,10 @@ function readLastVisit() {
 }
 
 function renderAll() {
-  renderUpdated();
+  renderHero();
+  renderFocusTabs();
+  renderFocusPanel();
+  renderClock();
   renderStats();
   renderTop();
   renderTicker();
@@ -461,16 +691,18 @@ function renderAll() {
 async function poll() {
   try {
     const fresh = await loadData();
-    if (fresh.generatedAt === state.data.generatedAt) return;
+    if (fresh.generatedAt === state.meta.generatedAt) return;
+    state.meta = metaOf(fresh);
+    renderClock();
+
     const known = new Set(state.data.items.map((i) => i.id));
-    const added = fresh.items.filter((i) => !known.has(i.id)).length;
+    const added = fresh.items.filter((i) => !known.has(i.id) && inFocus(i)).length;
     if (!added) {
       setData(fresh);
-      renderUpdated();
       return;
     }
     const toast = $('#toast');
-    toast.innerHTML = `<span><b>${added}</b> new ${added === 1 ? 'story' : 'stories'} just came in</span><button class="btn">Show</button>`;
+    toast.innerHTML = `<span><b>${added}</b> new ${state.focus ? `${esc(state.focus.name)} ` : ''}${added === 1 ? 'story' : 'stories'} just came in</span><button class="btn">Show</button>`;
     toast.hidden = false;
     $('button', toast).onclick = () => {
       toast.hidden = true;
@@ -481,6 +713,27 @@ async function poll() {
   } catch {
     // Offline or mid-deploy; try again next round.
   }
+}
+
+let pollTimer;
+
+/**
+ * Check for a new snapshot shortly after the next one is due, then every
+ * minute while it's late (a slow GitHub runner), backing off if it's very late.
+ */
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  const now = Date.now();
+  const due = state.meta?.nextUpdateAt ? Date.parse(state.meta.nextUpdateAt) : null;
+  let delay = POLL_MS;
+  if (due !== null) {
+    if (due > now) delay = Math.min(due - now + 15 * 1000, POLL_MS);
+    else delay = now - due < 30 * 60 * 1000 ? 60 * 1000 : 5 * 60 * 1000;
+  }
+  pollTimer = setTimeout(async () => {
+    await poll();
+    schedulePoll();
+  }, delay);
 }
 
 /* ---------- Events -------------------------------------------------- */
@@ -500,6 +753,27 @@ function bindEvents() {
   document.addEventListener('load', (e) => {
     if (e.target instanceof HTMLImageElement) e.target.classList.remove('loading');
   }, true);
+
+  $('#focus-tabs').addEventListener('click', (e) => {
+    const tab = e.target.closest('.focus-tab');
+    if (tab) setFocus(tab.dataset.focus || null);
+  });
+
+  $('#focus-panel').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-focus-topic]');
+    if (!chip) return;
+    state.topic = chip.dataset.focusTopic;
+    applyFilters();
+    $('#latest').scrollIntoView();
+  });
+
+  addEventListener('popstate', () => setFocus(new URLSearchParams(location.search).get('ai'), { push: false }));
+
+  // Coming back to a tab that slept through an update: check right away.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || !state.meta?.nextUpdateAt) return;
+    if (Date.parse(state.meta.nextUpdateAt) <= Date.now()) poll().then(schedulePoll);
+  });
 
   $('#tabs').addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
@@ -572,7 +846,7 @@ function bindEvents() {
 /* ---------- Boot ---------------------------------------------------- */
 
 async function main() {
-  startNeural($('#neural'));
+  neural = startNeural($('#neural'));
   bindEvents();
   onScroll();
   state.lastVisit = readLastVisit();
@@ -586,9 +860,11 @@ async function main() {
     return;
   }
 
+  state.meta = metaOf(state.data);
+  state.focus = focusById(new URLSearchParams(location.search).get('ai'));
   renderAll();
-  setInterval(renderUpdated, 30 * 1000);
-  setInterval(poll, POLL_MS);
+  setInterval(renderClock, 1000);
+  schedulePoll();
 }
 
 main();

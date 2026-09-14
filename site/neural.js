@@ -4,8 +4,12 @@
  * Nodes near the pointer part around it and link up to it.
  */
 
-const COLORS = ['167,139,250', '34,211,238', '244,114,182'];
+export const DEFAULT_PALETTE = ['167,139,250', '34,211,238', '244,114,182'];
 
+/**
+ * Starts the animation and returns `{ setPalette }`, which recolours the
+ * network (e.g. to the brand colour of the AI in focus). Colours are "r,g,b".
+ */
 export function startNeural(canvas) {
   const ctx = canvas.getContext('2d');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -17,6 +21,8 @@ export function startNeural(canvas) {
   let signals = [];
   let running = true;
   let frame = 0;
+  let palette = DEFAULT_PALETTE;
+  const pick = () => palette[Math.floor(Math.random() * palette.length)];
   const pointer = { x: -9999, y: -9999, active: false };
 
   const linkDistance = () => Math.min(170, Math.max(110, width / 9));
@@ -37,7 +43,7 @@ export function startNeural(canvas) {
       vx: (Math.random() - 0.5) * 0.25,
       vy: (Math.random() - 0.5) * 0.25,
       r: Math.random() * 1.6 + 0.8,
-      c: COLORS[Math.floor(Math.random() * COLORS.length)],
+      c: pick(),
       glow: 0,
     }));
     signals = [];
@@ -178,9 +184,21 @@ export function startNeural(canvas) {
   });
   host.addEventListener('pointerleave', () => { pointer.active = false; });
 
+  const controller = {
+    setPalette(colors) {
+      palette = colors?.length ? colors : DEFAULT_PALETTE;
+      for (const n of nodes) {
+        n.c = pick();
+        n.glow = Math.random(); // a brief shimmer as the network changes colour
+      }
+      signals = [];
+      if (reduced) step();
+    },
+  };
+
   if (reduced) {
     step(); // one still frame
-    return;
+    return controller;
   }
 
   // Only animate while the hero is on screen and the tab is visible.
@@ -196,4 +214,5 @@ export function startNeural(canvas) {
   });
 
   loop();
+  return controller;
 }
