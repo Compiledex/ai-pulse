@@ -19,9 +19,11 @@ export function startNeural(canvas) {
   let dpr = 1;
   let nodes = [];
   let signals = [];
-  let running = true;
-  let frame = 0;
   let palette = DEFAULT_PALETTE;
+  let frameId = 0; // the one pending animation frame, 0 when stopped
+  let lastTime = 0;
+  let spawnClock = 0;
+  let onScreen = true;
   const pick = () => palette[Math.floor(Math.random() * palette.length)];
   const pointer = { x: -9999, y: -9999, active: false };
 
@@ -58,14 +60,15 @@ export function startNeural(canvas) {
     signals.push({ a, b, t: 0, speed: 0.012 + Math.random() * 0.018, c: a.c, hops: 2 + Math.floor(Math.random() * 4) });
   }
 
-  function step() {
+  /** Draws one frame. `dt` is elapsed time in 60fps frames, so motion speed doesn't depend on the display's refresh rate. */
+  function step(dt = 1) {
     const max = linkDistance();
     ctx.clearRect(0, 0, width, height);
 
     for (const n of nodes) {
       if (!reduced) {
-        n.x += n.vx;
-        n.y += n.vy;
+        n.x += n.vx * dt;
+        n.y += n.vy * dt;
         if (n.x < -20) n.x = width + 20;
         if (n.x > width + 20) n.x = -20;
         if (n.y < -20) n.y = height + 20;
@@ -77,13 +80,13 @@ export function startNeural(canvas) {
           const d = Math.hypot(dx, dy);
           // A soft push away from the cursor — attraction would clump nodes.
           if (d < 140 && d > 1) {
-            const force = (1 - d / 140) * 1.4;
+            const force = (1 - d / 140) * 1.4 * dt;
             n.x -= (dx / d) * force;
             n.y -= (dy / d) * force;
           }
         }
       }
-      n.glow *= 0.94;
+      n.glow *= 0.94 ** dt;
     }
 
     // Links
@@ -119,9 +122,13 @@ export function startNeural(canvas) {
     }
 
     // Signals travelling along links, hopping onward when they arrive
-    if (!reduced && frame % 14 === 0 && signals.length < 26) spawnSignal();
+    spawnClock += dt;
+    if (!reduced && spawnClock >= 14) {
+      spawnClock = 0;
+      if (signals.length < 26) spawnSignal();
+    }
     signals = signals.filter((s) => {
-      s.t += s.speed;
+      s.t += s.speed * dt;
       if (s.t >= 1) {
         s.b.glow = 1;
         if (--s.hops <= 0) return false;
@@ -158,14 +165,37 @@ export function startNeural(canvas) {
         ctx.fill();
       }
     }
-
-    frame++;
   }
 
-  function loop() {
-    if (!running) return;
-    step();
-    requestAnimationFrame(loop);
+  function tick(time) {
+    frameId = 0;
+    // Real elapsed time, capped so a stall doesn't fling nodes across the canvas.
+    const dt = lastTime ? Math.min(time - lastTime, 50) / (1000 / 60) : 1;
+    lastTime = time;
+    step(dt);
+    start();
+  }
+
+  /*
+   * Exactly one frame is ever pending. The earlier version restarted its loop
+   * on returning to the tab while the browser still held the frame it had
+   * already queued, so every tab switch added another loop and the animation
+   * ran faster each time.
+   */
+  function start() {
+    if (!frameId) frameId = requestAnimationFrame(tick);
+  }
+
+  function stop() {
+    if (frameId) cancelAnimationFrame(frameId);
+    frameId = 0;
+    lastTime = 0;
+  }
+
+  /** Animate only while the hero is on screen and the tab is visible. */
+  function update() {
+    if (onScreen && !document.hidden) start();
+    else stop();
   }
 
   resize();
@@ -201,18 +231,12 @@ export function startNeural(canvas) {
     return controller;
   }
 
-  // Only animate while the hero is on screen and the tab is visible.
   new IntersectionObserver(([entry]) => {
-    const shouldRun = entry.isIntersecting && !document.hidden;
-    if (shouldRun && !running) { running = true; loop(); }
-    if (!shouldRun) running = false;
+    onScreen = entry.isIntersecting;
+    update();
   }).observe(canvas);
+  document.addEventListener('visibilitychange', update);
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) running = false;
-    else if (!running && canvas.getBoundingClientRect().bottom > 0) { running = true; loop(); }
-  });
-
-  loop();
+  update();
   return controller;
 }
