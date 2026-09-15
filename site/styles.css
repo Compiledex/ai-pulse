@@ -1067,6 +1067,12 @@ button, input { font: inherit; color: inherit; }
   box-shadow: 0 0 10px currentColor;
 }
 
+.via {
+  margin-left: -6px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
 .stretch::after {
   content: '';
   position: absolute;

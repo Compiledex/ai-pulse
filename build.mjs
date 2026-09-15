@@ -13,6 +13,7 @@ import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { FOCUS } from './focus.mjs';
 import { parseAnthropicIndex } from './lib/anthropic.mjs';
 import { extractDescription, extractShareImage, parseFeed } from './lib/feed.mjs';
+import { fromGoogleNews, searchUrl } from './lib/googlenews.mjs';
 import { fetchJson, fetchText, mapLimit } from './lib/http.mjs';
 import { dailyPapers, trendingModels, trendingModelsBy } from './lib/huggingface.mjs';
 import {
@@ -48,11 +49,38 @@ async function loadPrevious() {
 
 async function readSource(source) {
   const body = await fetchText(source.url, { timeoutMs: 20000 });
-  const entries = source.kind === 'anthropic'
-    ? parseAnthropicIndex(body, source.url)
-    : parseFeed(body, source.url);
+  let entries;
+  if (source.kind === 'anthropic') entries = parseAnthropicIndex(body, source.url);
+  else if (source.kind === 'googlenews') entries = fromGoogleNews(parseFeed(body, source.url), { keepPublisher: false });
+  else entries = parseFeed(body, source.url);
   if (entries.length === 0) throw new Error('no entries found (feed format changed?)');
   return entries;
+}
+
+/** Results per AI kept from each Google News search, in Google's relevance order. */
+const SEARCH_RESULTS_PER_AI = 15;
+
+/**
+ * "Around the web": one Google News search per AI. Each result remembers which
+ * AI it was found for (`focus`), so it lands in that AI's tab even when its
+ * headline doesn't literally name it.
+ */
+async function readWebSearch() {
+  const searches = FOCUS.filter((f) => f.search);
+  let failures = 0;
+  const results = await mapLimit(searches, 3, async (f) => {
+    try {
+      const body = await fetchText(searchUrl(f.search), { timeoutMs: 20000 });
+      return fromGoogleNews(parseFeed(body, 'https://news.google.com/'), { limit: SEARCH_RESULTS_PER_AI })
+        .map((e) => ({ ...e, focus: [f.id] }));
+    } catch (err) {
+      failures++;
+      log(`    search for ${f.name} failed: ${err.message}`);
+      return [];
+    }
+  });
+  if (failures === searches.length) throw new Error('every search failed');
+  return results.flat();
 }
 
 async function collectNews(previous, now) {
@@ -60,7 +88,10 @@ async function collectNews(previous, now) {
 
   const lists = await Promise.all(SOURCES.map(async (source) => {
     try {
-      const items = normalizeEntries(source, await readSource(source), now);
+      const entries = source.kind === 'websearch' ? await readWebSearch() : await readSource(source);
+      const items = source.kind === 'websearch'
+        ? mergeItems([normalizeEntries(source, entries, now, { perSource: Infinity })])
+        : normalizeEntries(source, entries, now);
       statuses[source.id] = { ok: true, count: items.length };
       log(`  ✓ ${source.name.padEnd(24)} ${items.length}`);
       return items;
@@ -112,7 +143,7 @@ async function withFallback(label, fn, fallback) {
 /** Each focusable AI, with trending open models from its Hugging Face org(s). */
 async function collectFocus(previous) {
   const previousModels = new Map((previous?.focus ?? []).map((f) => [f.id, f.models]));
-  return Promise.all(FOCUS.map(async ({ hf, ...focus }) => {
+  return Promise.all(FOCUS.map(async ({ hf, search, ...focus }) => {
     const models = hf.length
       ? await withFallback(`models by ${hf.join(', ')}`, () => trendingModelsBy(hf, 4), previousModels.get(focus.id))
       : [];

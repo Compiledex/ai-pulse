@@ -1,6 +1,6 @@
 # AI Pulse
 
-A self-updating hub for everything happening in AI — lab announcements, tech journalism, research papers and trending open models, collected from 19 sources every 30 minutes.
+A self-updating hub for everything happening in AI — lab announcements, tech journalism, research papers and trending open models, collected from 31 sources every 30 minutes.
 
 **Live site:** https://compiledex.github.io/ai-pulse/
 
@@ -8,7 +8,8 @@ A self-updating hub for everything happening in AI — lab announcements, tech j
 
 - **AI focus** — one tab per AI (ChatGPT, Claude, Gemini, Meta AI, Grok, Copilot, DeepSeek, Mistral, Qwen). Picking one turns the whole page into a hub for that AI: the headline, top stories, ticker and feed only show stories about it, and a profile panel adds official links, the maker's latest announcement, coverage stats, what the coverage is about and its trending open models. Every view has its own link, e.g. [`?ai=claude`](https://compiledex.github.io/ai-pulse/?ai=claude).
 - **Top stories** — ranked by recency, source weight and (for Hacker News) community votes, with at most one story per source.
-- **Latest stories** — the last 30 days, grouped by day, filterable by source type (AI labs / tech press / analysis) and by topic (OpenAI, Anthropic, Agents, Policy…), with instant search (press `/`).
+- **Latest stories** — the last 30 days, grouped by day, filterable by source type and by topic (Agents, Policy, Coding…), with instant search (press `/`).
+- **Around the web** — each AI tab also includes a Google News search for that AI, so the coverage is close to what you'd find by googling it, credited to the original outlet.
 - **Live update clock** — the header shows when the news was collected and counts down to the next collection. The page checks for the new snapshot right when it's due, and offers to show fresh stories as soon as they land. If GitHub skips a scheduled run, the countdown moves on to the next slot rather than waiting forever.
 - **NEW badges** — stories published since your previous visit are marked.
 - **Trending models** and **papers everyone's reading**, from the Hugging Face API.
@@ -18,8 +19,13 @@ A self-updating hub for everything happening in AI — lab announcements, tech j
 
 There is no server and no database. A GitHub Actions workflow runs twice an hour (at :17 and :47 — GitHub's scheduler is best-effort and drops some runs under load, so two slots away from the top of the hour keep gaps short):
 
-1. `build.mjs` fetches every source in [`sources.mjs`](sources.mjs) in parallel — RSS/Atom feeds, plus Anthropic's news page, which has no feed and is scraped.
-2. Entries are normalised, de-duplicated (by URL and headline), tagged with topics, and trimmed to recent stories.
+1. `build.mjs` fetches every source in [`sources.mjs`](sources.mjs) in parallel:
+   - **AI labs** — OpenAI, Anthropic, Google DeepMind, Google AI, Mistral, NVIDIA, Hugging Face, AWS. Anthropic has no feed, so its news page is read instead, from the post data the page embeds (which also catches featured posts outside `/news/`).
+   - **Tech press** — The Verge, TechCrunch, WIRED, MIT Technology Review, Ars Technica, The Guardian, The Decoder.
+   - **Business & world** — Reuters, Axios, Bloomberg, Financial Times, The New York Times, CNBC, BBC News, CBS News, NPR, Politico, Business Insider. These feeds cover everything, so only stories about AI are kept. Reuters has no public feed and is read through a Google News site search.
+   - **Analysis** — Simon Willison, Latent Space, Import AI, Hacker News (100+ points).
+   - **Around the web** — one Google News search per AI in [`focus.mjs`](focus.mjs), 15 results each. Their links are Google News redirects and they carry no teaser or image, so they get generated cover art.
+2. Entries are normalised, de-duplicated (by URL and headline — a story from a direct source beats the same story found by search), tagged with topics, and trimmed to recent stories.
 3. Stories without an image get one from their article's `og:image`. The previous live snapshot acts as a cache, so each article is only looked up once rather than on every build.
 4. The schedule is read from the cron line in the workflow file itself, so the page's countdown can't drift from the real schedule.
 5. Everything is written to `dist/data/news.json` next to the static page in `site/`, and deployed to GitHub Pages.
@@ -39,7 +45,8 @@ build.mjs            orchestrates a build (network I/O lives here)
 sources.mjs          the list of sources — adding one is a single entry
 focus.mjs            the AIs you can focus on: topic, maker's blog, links, Hugging Face orgs
 lib/feed.mjs         forgiving RSS/Atom parser + og:image extraction
-lib/anthropic.mjs    scraper for anthropic.com/news
+lib/anthropic.mjs    reader for anthropic.com/news (embedded post data, links as fallback)
+lib/googlenews.mjs   Google News search feeds: outlet credit, headline cleanup
 lib/huggingface.mjs  trending models and daily papers
 lib/pipeline.mjs     pure transforms: normalise, merge, de-duplicate, cache reuse
 lib/topics.mjs       keyword topic tagging

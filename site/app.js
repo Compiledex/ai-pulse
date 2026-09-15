@@ -89,7 +89,9 @@ const focusById = (id) => state.data?.focus?.find((f) => f.id === id) ?? null;
 /** A story is about an AI if it mentions it, or comes from the maker's own blog. */
 function inFocus(item, focus = state.focus) {
   if (!focus) return true;
-  return item.topics.includes(focus.topic) || focus.sources.includes(item.source);
+  return item.topics.includes(focus.topic)
+    || focus.sources.includes(item.source)
+    || (item.focus ?? []).includes(focus.id); // found by that AI's web search
 }
 
 /** Every story in the current focus, newest first. */
@@ -117,9 +119,13 @@ function media(item, label, color, seed = item.id) {
     class="loading" data-seed="${esc(seed)}" data-color="${esc(color)}" data-label="${esc(label)}">`;
 }
 
+/** The outlet to credit: the original publisher for stories found through Google News. */
+const outletOf = (item) => item.publisher || sourceOf(item).name;
+
 function sourceBadge(item) {
   const src = sourceOf(item);
-  return `<span class="src" style="--accent:${esc(src.color)}">${esc(src.name)}</span>`;
+  const via = item.via ? `<span class="via">via ${esc(item.via)}</span>` : '';
+  return `<span class="src" style="--accent:${esc(src.color)}">${esc(outletOf(item))}</span>${via}`;
 }
 
 /* ---------- Top stories --------------------------------------------- */
@@ -164,7 +170,7 @@ function renderTop() {
 
   $('#top-stories').innerHTML = `
     <article class="featured enter" style="--i:0">
-      <div class="media">${media(featured, fsrc.name, fsrc.color)}</div>
+      <div class="media">${media(featured, outletOf(featured), fsrc.color)}</div>
       <div class="body">
         <span class="label"><span class="spark"></span>Top story</span>
         <h3><a class="stretch" href="${esc(safeUrl(featured.url))}" target="_blank" rel="noopener">${esc(featured.title)}</a></h3>
@@ -177,7 +183,7 @@ function renderTop() {
         const src = sourceOf(item);
         return `
         <li class="top-item enter" style="--i:${i + 1}">
-          <div class="thumb">${media(item, src.name, src.color)}</div>
+          <div class="thumb">${media(item, outletOf(item), src.color)}</div>
           <div>
             <div class="meta">${sourceBadge(item)}<time datetime="${esc(item.published)}">${timeAgo(item.published, now)}</time></div>
             <h3><a class="stretch" href="${esc(safeUrl(item.url))}" target="_blank" rel="noopener">${esc(item.title)}</a></h3>
@@ -211,7 +217,7 @@ function matches(item, { category = state.category, topic = state.topic, query =
   if (category !== 'all' && sourceOf(item).category !== category) return false;
   if (topic && !item.topics.includes(topic)) return false;
   if (query) {
-    const hay = `${item.title} ${item.summary} ${sourceOf(item).name}`.toLowerCase();
+    const hay = `${item.title} ${item.summary} ${sourceOf(item).name} ${item.publisher ?? ''}`.toLowerCase();
     return query.toLowerCase().split(/\s+/).every((term) => hay.includes(term));
   }
   return true;
@@ -341,7 +347,7 @@ function card(item, { wide = false } = {}) {
   return `
     <article class="card reveal${wide ? ' wide' : ''}" style="--accent:${esc(src.color)}" data-id="${esc(item.id)}">
       <div class="card-media">
-        ${media(item, src.name, src.color)}
+        ${media(item, outletOf(item), src.color)}
         ${isNew(item) ? '<span class="badge-new">NEW</span>' : ''}
       </div>
       <div class="card-body">
@@ -498,10 +504,16 @@ function renderFocusPanel() {
   const items = pool();
   const within = (ms) => items.filter((i) => now - Date.parse(i.published) < ms).length;
 
-  const bySource = new Map();
-  for (const i of items) bySource.set(i.source, (bySource.get(i.source) ?? 0) + 1);
-  const coverage = [...bySource].sort((a, b) => b[1] - a[1]).slice(0, 4)
-    .map(([id, n]) => `<span class="src" style="--accent:${esc(state.sources.get(id)?.color ?? '#a78bfa')}">${esc(state.sources.get(id)?.name ?? id)}<small>${n}</small></span>`)
+  // Counted per outlet, so web-search results credit Reuters or CNBC rather than "Google News".
+  const byOutlet = new Map();
+  for (const i of items) {
+    const name = outletOf(i);
+    const entry = byOutlet.get(name) ?? { n: 0, color: sourceOf(i).color };
+    entry.n++;
+    byOutlet.set(name, entry);
+  }
+  const coverage = [...byOutlet].sort((a, b) => b[1].n - a[1].n).slice(0, 4)
+    .map(([name, { n, color }]) => `<span class="src" style="--accent:${esc(color)}">${esc(name)}<small>${n}</small></span>`)
     .join('');
 
   const official = items.find((i) => f.sources.includes(i.source));
@@ -513,7 +525,7 @@ function renderFocusPanel() {
       <article class="focus-block">
         <h3>${official ? `Latest from ${esc(f.maker)}` : 'Latest headline'}</h3>
         <div class="official">
-          <div class="thumb">${media(lead, src.name, src.color)}</div>
+          <div class="thumb">${media(lead, outletOf(lead), src.color)}</div>
           <div>
             <div class="meta">${sourceBadge(lead)}<time datetime="${esc(lead.published)}">${timeAgo(lead.published, now)}</time></div>
             <h4><a class="stretch" href="${esc(safeUrl(lead.url))}" target="_blank" rel="noopener">${esc(lead.title)}</a></h4>

@@ -6,6 +6,8 @@
  *   sources  source ids from sources.mjs — the maker's own blog, whose posts
  *            count even when the headline doesn't name the company
  *   hf       Hugging Face authors whose trending open models are shown
+ *   search   Google News query for "Around the web" — roughly what you'd get by
+ *            googling the AI. Quoted phrases keep "Claude" from matching people.
  *
  * Blurbs stay deliberately free of version numbers so they don't go stale;
  * the stories themselves say what's current.
@@ -26,6 +28,7 @@ export const FOCUS = [
       { label: 'API docs', url: 'https://developers.openai.com/api/docs' },
     ],
     hf: [],
+    search: '"OpenAI" OR "ChatGPT"',
   },
   {
     id: 'claude',
@@ -41,6 +44,7 @@ export const FOCUS = [
       { label: 'API docs', url: 'https://platform.claude.com/docs/en/home' },
     ],
     hf: [],
+    search: '"Anthropic" OR "Claude AI"',
   },
   {
     id: 'gemini',
@@ -56,6 +60,7 @@ export const FOCUS = [
       { label: 'Developer docs', url: 'https://ai.google.dev/' },
     ],
     hf: ['google'],
+    search: '"Google Gemini" OR "Google DeepMind"',
   },
   {
     id: 'meta',
@@ -71,6 +76,7 @@ export const FOCUS = [
       { label: 'Llama', url: 'https://www.llama.com/' },
     ],
     hf: ['meta-llama'],
+    search: '"Meta AI" OR "Meta Llama" OR "Meta Superintelligence"',
   },
   {
     id: 'grok',
@@ -86,6 +92,7 @@ export const FOCUS = [
       { label: 'API docs', url: 'https://docs.x.ai/overview' },
     ],
     hf: [],
+    search: '"xAI" OR "Grok"',
   },
   {
     id: 'copilot',
@@ -100,6 +107,7 @@ export const FOCUS = [
       { label: 'Microsoft AI blog', url: 'https://microsoft.ai/blog/' },
     ],
     hf: [],
+    search: '"Microsoft Copilot" OR "Microsoft AI"',
   },
   {
     id: 'deepseek',
@@ -115,6 +123,7 @@ export const FOCUS = [
       { label: 'Models on Hugging Face', url: 'https://huggingface.co/deepseek-ai' },
     ],
     hf: ['deepseek-ai'],
+    search: '"DeepSeek"',
   },
   {
     id: 'mistral',
@@ -130,6 +139,7 @@ export const FOCUS = [
       { label: 'API docs', url: 'https://docs.mistral.ai/' },
     ],
     hf: ['mistralai'],
+    search: '"Mistral AI"',
   },
   {
     id: 'qwen',
@@ -145,5 +155,6 @@ export const FOCUS = [
       { label: 'Models on Hugging Face', url: 'https://huggingface.co/Qwen' },
     ],
     hf: ['Qwen'],
+    search: '"Qwen" OR "Alibaba AI"',
   },
 ];
