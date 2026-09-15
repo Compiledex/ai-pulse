@@ -44,6 +44,15 @@ Some publishers (Reuters, Bloomberg, the FT, OpenAI) block automated requests, s
 
 Generated images are stored outside git: the Actions cache keeps them between builds, and anything the cache loses is downloaded back from the live site. Without Cloudflare credentials the build still runs and uses the illustrations it already has.
 
+### A reliable schedule
+
+GitHub runs scheduled workflows on a best-effort basis, and in practice dropped most of this repo's (two of ~28 in the first 14 hours). So the real clock is a small [Cloudflare Worker](scheduler/worker.js) with a Cron Trigger at :17 and :47, which starts the build through GitHub's `workflow_dispatch` API using a fine-grained token limited to this repo's Actions. The workflow's own schedule remains as a backup, and a test keeps the two in step with the page's countdown.
+
+```sh
+npx wrangler deploy --config scheduler/wrangler.toml
+npx wrangler secret put GITHUB_TOKEN --config scheduler/wrangler.toml
+```
+
 ### Failure handling
 
 - One broken feed never breaks the build: that source's last known stories are kept and it shows as *offline* in the source list.

@@ -24,6 +24,13 @@ test('the real workflow has a schedule the countdown understands', () => {
   assert.ok(cronMinutes(yaml)?.length);
 });
 
+test('the Cloudflare scheduler fires at the same minutes the countdown shows', () => {
+  const yaml = readFileSync(new URL('../.github/workflows/build.yml', import.meta.url), 'utf8');
+  const toml = readFileSync(new URL('../scheduler/wrangler.toml', import.meta.url), 'utf8');
+  const workerCron = toml.match(/crons\s*=\s*\[\s*"([^"]+)"/)?.[1];
+  assert.deepEqual(cronMinutes(`cron: '${workerCron}'`), cronMinutes(yaml));
+});
+
 test('next run is strictly after now, across slots, hours and days', () => {
   const both = [17, 47];
   assert.equal(nextRun(at('2026-09-15T10:03:00Z'), both), at('2026-09-15T10:17:00Z'));

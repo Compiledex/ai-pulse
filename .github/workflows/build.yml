@@ -3,11 +3,11 @@ name: Collect news and deploy
 on:
   push:
     branches: [main]
-  # Twice an hour: the whole point of the site is that it's current without
-  # anyone touching it. GitHub runs schedules on a best-effort basis and drops
-  # some under load (worst around the top of the hour), so two slots well away
-  # from :00 keep a skipped run from leaving the site hours out of date.
-  # The page's countdown reads this line — see lib/schedule.mjs.
+  # Twice an hour. GitHub runs schedules on a best-effort basis and dropped most
+  # of ours, so the real clock is a Cloudflare Worker (scheduler/) that starts
+  # this workflow via workflow_dispatch at the same minutes. This schedule
+  # stays as a backup. The page's countdown reads this line — see
+  # lib/schedule.mjs — and a test keeps it in step with scheduler/wrangler.toml.
   schedule:
     - cron: '17,47 * * * *'
   workflow_dispatch:
@@ -80,7 +80,7 @@ jobs:
   # days. The site deploys artifacts rather than committing, so without this
   # the scheduled refresh would silently stop two months after the last push.
   keepalive:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
