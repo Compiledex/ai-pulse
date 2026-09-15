@@ -71,6 +71,9 @@ test('aiOnly sources keep only AI stories', () => {
   assert.ok(isAboutAI('Nvidia beats estimates'));
   assert.ok(isAboutAI('Why A.I. is eating the world'));
   assert.ok(isAboutAI('Senate weighs artificial intelligence bill'));
+  assert.ok(isAboutAI("Dario Amodei's Essay Was Gutsy. It Didn't Go Far Enough."));
+  assert.ok(isAboutAI('Conversations that AIs are having in the office'));
+  assert.ok(isAboutAI('They fought against datacenters. Now they are running for local offices'));
   assert.ok(!isAboutAI('Apple unveils a thinner iPhone'));
   assert.ok(!isAboutAI('Ai Weiwei opens exhibition in Berlin'), '"Ai" as a name is not AI');
   assert.ok(!isAboutAI('Fed said to hold rates'));
@@ -137,4 +140,33 @@ test('normalizeEntries keeps the Google News identity of a result', () => {
   const [item] = normalizeEntries({ id: 'web' }, fromGoogleNews(parseFeed(GOOGLE_NEWS, 'https://news.google.com/'), { limit: 1 }), Date.parse('2026-09-15T00:00:00Z'));
   assert.equal(item.googleUrl, 'https://news.google.com/rss/articles/CBMiabc?oc=5');
   assert.equal(item.image, null);
+});
+
+test('the AI filter needs AI in the headline and skips roundups and live blogs', () => {
+  // Mentioned only in the teaser: not an AI story.
+  assert.ok(!isAboutAI('Volvo increases the batteries for 2028 XC60 and XC90 plug-in refresh'));
+  assert.ok(!isAboutAI('Bank of America expects third-quarter investment banking fees to fall more than 10%'));
+  // Roundups and live blogs, even with AI among their items.
+  for (const t of [
+    "US 10-Year Yield Highest Since 2007, Trump's AI Defense, More",
+    "Trump calls AI fears a 'hoax', Treasury yields surge, Moynihan's warning and more in Morning Squawk",
+    'UK government moves to acquire Speciality Steel UK; AI stocks hit by calls for slowdown – as it happened',
+    'Pensioners just above threshold shouldn’t pay income tax, says No 10 – UK politics live',
+    'FirstFT: AI poses risks to China’s political and social security, spy agency warns',
+    '9/14: CBS Evening News',
+  ]) assert.ok(!isAboutAI(t), t);
+  // Z.ai is an AI company, even though "ai" is lowercase there.
+  assert.ok(isAboutAI('Z.ai shares tumble over 10% after $5 billion fundraising'));
+  // …and a real headline that happens to end in "more" is fine.
+  assert.ok(isAboutAI('OpenAI adds memory to ChatGPT and more people get access'));
+});
+
+test('live blogs and event promotions are dropped from every source, not just filtered ones', () => {
+  const entry = (title) => ({ title, url: `https://g.example/${encodeURIComponent(title)}`, summary: '', image: null, published: new Date(NOW - 3600e3) });
+  const items = normalizeEntries({ id: 'guardian' }, [
+    entry('Democrats say supreme court rejection of Trump mail ballot plans will ensure ‘safe, secure and accurate elections’ – live'),
+    entry('5 days left to exhibit at TechCrunch Disrupt 2026'),
+    entry('Elevenlabs makes Music v2.5 available via app and API'),
+  ], NOW);
+  assert.deepEqual(items.map((i) => i.title), ['Elevenlabs makes Music v2.5 available via app and API'], 'an AI-feed story without "AI" in its headline still stays');
 });

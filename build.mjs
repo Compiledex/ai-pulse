@@ -48,6 +48,9 @@ const LINK_RESOLVES = 80;
 /** Pictures measured per build (first bytes only); the rest wait. */
 const IMAGE_PROBES = 300;
 
+/** Bumped when the AI filter gets stricter, so stories kept from earlier builds are checked again once. */
+const FILTER_VERSION = 2;
+
 /** Publishing fewer stories than this means something is badly wrong upstream. */
 const MIN_ITEMS = 25;
 
@@ -83,7 +86,9 @@ async function readSource(source) {
 
   const entries = [...main.value];
   extra.forEach((result, i) => {
-    if (result.status === 'fulfilled') entries.push(...result.value.filter((e) => isAboutAI(`${e.title} ${e.summary}`)));
+    if (result.status === 'fulfilled') {
+      entries.push(...result.value.filter((e) => isAboutAI(e.title)).map((e) => ({ ...e, fromSection: true })));
+    }
     else log(`    ${source.name}: section feed ${source.more[i]} failed: ${result.reason.message}`);
   });
   if (entries.length === 0) throw new Error('no entries found (feed format changed?)');
@@ -126,12 +131,13 @@ async function collectNews(previous, now) {
       const entries = web ? await readWebSearch() : await readSource(source);
       const fresh = normalizeEntries(source, entries, now, web ? { perSource: Infinity } : {});
       // Stories that have since scrolled out of the feed stay for 30 days.
-      const items = carryOver(source, fresh, previous?.items, now, limit);
+      const recheckSections = previous?.filterVersion !== FILTER_VERSION;
+      const items = carryOver(source, fresh, previous?.items, now, limit, { recheckSections });
       statuses[source.id] = { ok: true, count: items.length };
       log(`  ✓ ${source.name.padEnd(24)} ${String(items.length).padStart(3)} (${fresh.length} in feed now)`);
       return items;
     } catch (err) {
-      const kept = carryOver(source, [], previous?.items, now, limit);
+      const kept = carryOver(source, [], previous?.items, now, limit, { recheckSections: previous?.filterVersion !== FILTER_VERSION });
       statuses[source.id] = { ok: false, count: kept.length, error: err.message, stale: kept.length > 0 };
       log(`  ✗ ${source.name.padEnd(24)} ${err.message}${kept.length ? ` (keeping ${kept.length} previous)` : ''}`);
       return kept;
@@ -496,6 +502,7 @@ async function main() {
     coverPool,
     coverBudget,
     coverAssignment: COVER_ASSIGNMENT_VERSION,
+    filterVersion: FILTER_VERSION,
     items,
     models,
     papers,

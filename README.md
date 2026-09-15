@@ -22,9 +22,9 @@ There is no server and no database. A GitHub Actions workflow runs every half ho
 1. `build.mjs` fetches every source in [`sources.mjs`](sources.mjs) in parallel:
    - **AI labs** — OpenAI, Anthropic, Google DeepMind, Google AI, Mistral, NVIDIA, Hugging Face, AWS. Anthropic has no feed, so its news page is read instead, from the post data the page embeds (which also catches featured posts outside `/news/`).
    - **Tech press** — The Verge, TechCrunch, WIRED, MIT Technology Review, Ars Technica, The Guardian, The Decoder.
-   - **Business & world** — Reuters, Axios, Bloomberg, Financial Times, The New York Times, CNBC, BBC News, CBS News, NPR, Politico, Business Insider. These feeds cover everything, so only stories about AI are kept. Reuters has no public feed and is read through a Google News site search.
+   - **Business & world** — Reuters, Axios, Bloomberg, Financial Times, The New York Times, CNBC, BBC News, CBS News, NPR, Politico, Business Insider. These feeds cover everything, so only stories with AI in the headline are kept — a passing mention in the teaser isn't enough. Reuters has no public feed and is read through a Google News site search.
 
-   Many outlets file AI stories under Business, Politics or Markets rather than Technology, so a source can list extra section feeds (`more`), filtered to AI stories — BBC's interview on an AI "kill switch" only ever appeared in its Business feed.
+   Many outlets file AI stories under Business, Politics or Markets rather than Technology, so a source can list extra section feeds (`more`), filtered to AI stories — BBC's interview on an AI "kill switch" only ever appeared in its Business feed. Roundups, live blogs, newsletters and event promotions ("…, Trump's AI Defense, More", "– as it happened") are dropped from every source.
    - **Analysis** — Simon Willison, Latent Space, Import AI, Hacker News (100+ points).
    - **Around the web** — one Google News search per AI in [`focus.mjs`](focus.mjs), 15 results each. Google News links are redirects, so the build resolves each one to the real article (cached, so once per story) — giving a direct link and letting the share-image lookup find a picture.
 2. Feeds only hold their latest 10–100 entries, so each build also keeps what the previous snapshot had for a source: a story stays for 30 days even after it scrolls out of the feed.
