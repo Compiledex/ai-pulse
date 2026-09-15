@@ -21,6 +21,7 @@ const state = {
   query: '',
   shown: PAGE_SIZE,
   lastVisit: null,
+  eventNewest: new Map(), // event (cluster) id -> time of its newest story
   focus: null, // the AI in focus (an entry of data.focus), or null for everything
   meta: null, // { generatedAt, nextUpdateAt, schedule } of the newest snapshot seen, even if not shown yet
 };
@@ -175,32 +176,73 @@ function sourceBadge(item) {
 /** Measured pictures must be at least `width` wide; unmeasured ones (not checked yet) get the benefit of the doubt. */
 const sharpEnough = (item, width) => !item.imageWidth || item.imageWidth >= width;
 
+/**
+ * How strongly a story should lead the page:
+ *   - how many different outlets cover the same event: ×1.6 for two, ×2.2 for
+ *     four, ×2.7 for seven — the main signal of a big story;
+ *   - its source's weight (labs' own news counts most, see sources.mjs);
+ *   - freshness of the *event*, from its newest coverage, halving after 14
+ *     hours — so a story still being reported stays up;
+ *   - smaller lifts for a picture, Hacker News votes and topic breadth;
+ *   - among stories about the same event, a slight preference for the most
+ *     recent article;
+ *   - in an AI's tab, a lift for stories whose headline names that AI.
+ */
 function score(item, now) {
   const src = sourceOf(item);
-  const ageHours = (now - Date.parse(item.published)) / HOUR;
-  let s = (src.weight ?? 1) / (1 + ageHours / 10);
-  if (item.image) s *= 1.35;
+  const published = Date.parse(item.published);
+  const newest = item.cluster ? state.eventNewest.get(item.cluster) ?? published : published;
+  const eventAge = (now - newest) / HOUR;
+  const ownAge = (now - published) / HOUR;
+
+  let s = (src.weight ?? 1) / (1 + eventAge / 14);
+  s *= 1 + 0.6 * Math.log2(item.coverage ?? 1);
+  if (item.image) s *= 1.25;
   const points = /(\d+) points/.exec(item.summary);
   if (points) s *= 1 + Math.min(Number(points[1]), 800) / 400;
-  s *= 1 + Math.min(item.topics.length, 3) * 0.06;
+  s *= 1 + Math.min(item.topics.length, 3) * 0.04;
+  s *= 0.85 + 0.15 / (1 + ownAge / 12);
+
+  // In an AI's tab, lead with stories about that AI rather than big stories that only mention it.
+  const f = state.focus;
+  if (f) {
+    const about = item.headlineTopics?.includes(f.topic) || f.sources.includes(item.source);
+    s *= about ? 1.6 : 0.6;
+  }
   return s;
+}
+
+/** "Covered by 8 outlets" for events that several outlets are reporting. */
+function coverageLabel(item) {
+  if (!item.coverage || item.coverage < 3) return '';
+  return `<span class="coverage" title="${item.coverage} different outlets are reporting this">${item.coverage} outlets</span>`;
 }
 
 function pickTopStories(items, now) {
   const recent = items.filter((i) => now - Date.parse(i.published) < 3 * DAY);
   const pool = (recent.length >= 5 ? recent : items).slice().sort((a, b) => score(b, now) - score(a, now));
 
-  // One story per source, so the top of the page isn't five TechCrunch links.
+  // One story per source and one per event, so the top of the page isn't five
+  // TechCrunch links — or the same news from five outlets.
   const picked = [];
   const usedSources = new Set();
-  // The big slot needs a big picture: a small one would be stretched into visible pixels.
-  const featured = pool.find((i) => i.image && sharpEnough(i, 1000)) ?? pool.find((i) => i.image) ?? pool[0];
-  if (featured) { picked.push(featured); usedSources.add(featured.source); }
-  for (const item of pool) {
-    if (picked.length >= 5) break;
-    if (usedSources.has(item.source)) continue;
+  const usedEvents = new Set();
+  const take = (item) => {
     picked.push(item);
     usedSources.add(item.source);
+    usedEvents.add(item.cluster ?? item.id);
+  };
+  // The big slot needs a big picture: a small one would be stretched into visible pixels.
+  // Among the leading event's stories, prefer one that has a sharp one.
+  const lead = pool[0];
+  const leadEvent = lead && pool.filter((i) => (i.cluster ?? i.id) === (lead.cluster ?? lead.id));
+  const featured = leadEvent?.find((i) => i.image && sharpEnough(i, 1000))
+    ?? pool.find((i) => i.image && sharpEnough(i, 1000)) ?? pool.find((i) => i.image) ?? lead;
+  if (featured) take(featured);
+  for (const item of pool) {
+    if (picked.length >= 5) break;
+    if (usedSources.has(item.source) || usedEvents.has(item.cluster ?? item.id)) continue;
+    take(item);
   }
   return picked;
 }
@@ -221,7 +263,7 @@ function renderTop() {
         <span class="label"><span class="spark"></span>Top story</span>
         <h3><a class="stretch" href="${esc(safeUrl(featured.url))}" target="_blank" rel="noopener">${esc(featured.title)}</a></h3>
         ${featured.summary ? `<p>${esc(featured.summary)}</p>` : ''}
-        <div class="meta" style="margin-top:16px">${sourceBadge(featured)}<time datetime="${esc(featured.published)}">${timeAgo(featured.published, now)}</time></div>
+        <div class="meta" style="margin-top:16px">${sourceBadge(featured)}<time datetime="${esc(featured.published)}">${timeAgo(featured.published, now)}</time>${coverageLabel(featured)}</div>
       </div>
     </article>
     <ol class="top-list">
@@ -231,7 +273,7 @@ function renderTop() {
         <li class="top-item enter" style="--i:${i + 1}">
           <div class="thumb">${media(item, outletOf(item), src.color)}</div>
           <div>
-            <div class="meta">${sourceBadge(item)}<time datetime="${esc(item.published)}">${timeAgo(item.published, now)}</time></div>
+            <div class="meta">${sourceBadge(item)}<time datetime="${esc(item.published)}">${timeAgo(item.published, now)}</time>${coverageLabel(item)}</div>
             <h3><a class="stretch" href="${esc(safeUrl(item.url))}" target="_blank" rel="noopener">${esc(item.title)}</a></h3>
           </div>
         </li>`;
@@ -397,7 +439,7 @@ function card(item, { wide = false } = {}) {
         ${isNew(item) ? '<span class="badge-new">NEW</span>' : ''}
       </div>
       <div class="card-body">
-        <div class="meta">${sourceBadge(item)}<time datetime="${esc(item.published)}">${timeAgo(item.published)}</time></div>
+        <div class="meta">${sourceBadge(item)}<time datetime="${esc(item.published)}">${timeAgo(item.published)}</time>${coverageLabel(item)}</div>
         <h3><a class="stretch" href="${esc(safeUrl(item.url))}" target="_blank" rel="noopener">${esc(item.title)}</a></h3>
         ${item.summary ? `<p>${esc(item.summary)}</p>` : ''}
         ${item.discussion ? `<a class="discuss above" href="${esc(safeUrl(item.discussion))}" target="_blank" rel="noopener">Join the discussion →</a>` : ''}
@@ -833,6 +875,13 @@ function setData(data) {
   state.data = data;
   state.sources = new Map(data.sources.map((s) => [s.id, s]));
   state.topics = new Map(data.topics.map((t) => [t.id, t]));
+  // When each event was last reported, for ranking developing stories.
+  state.eventNewest = new Map();
+  for (const item of data.items) {
+    if (!item.cluster) continue;
+    const t = Date.parse(item.published);
+    if (t > (state.eventNewest.get(item.cluster) ?? 0)) state.eventNewest.set(item.cluster, t);
+  }
 }
 
 async function loadData() {

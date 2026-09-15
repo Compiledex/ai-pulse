@@ -987,6 +987,31 @@ button, input { font: inherit; color: inherit; }
   box-shadow: 0 0 10px currentColor;
 }
 
+/* How many outlets cover the same event */
+.coverage {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  background: rgba(34, 211, 238, 0.08);
+  color: #9be7f5;
+  font: 600 11px/1.5 var(--font-mono);
+  white-space: nowrap;
+}
+
+.coverage::before {
+  content: '';
+  width: 10px;
+  height: 8px;
+  background:
+    linear-gradient(currentColor, currentColor) 0 100% / 2px 45% no-repeat,
+    linear-gradient(currentColor, currentColor) 4px 100% / 2px 75% no-repeat,
+    linear-gradient(currentColor, currentColor) 8px 100% / 2px 100% no-repeat;
+  opacity: 0.9;
+}
+
 .via {
   margin-left: -6px;
   font-size: 12px;

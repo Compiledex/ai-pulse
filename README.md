@@ -7,7 +7,7 @@ A self-updating hub for everything happening in AI — lab announcements, tech j
 ## What's on the page
 
 - **AI focus** — one tab per AI (ChatGPT, Claude, Gemini, Meta AI, Grok, Copilot, DeepSeek, Mistral, Qwen). Picking one turns the whole page into a hub for that AI: the headline, top stories, ticker and feed only show stories about it, and a profile panel adds official links, the maker's latest announcement, coverage stats, what the coverage is about and its trending open models. Every view has its own link, e.g. [`?ai=claude`](https://compiledex.github.io/ai-pulse/?ai=claude).
-- **Top stories** — ranked by recency, source weight and (for Hacker News) community votes, with at most one story per source.
+- **Top stories** — ranked mainly by how many different outlets are covering the same event (stories are grouped by headline and teaser similarity, see [`lib/clusters.mjs`](lib/clusters.mjs)), then by source weight and how recently the event was last reported. At most one story per event and per source; widely covered events are labelled "N outlets".
 - **Latest stories** — the last 30 days, grouped by day, filterable by source type and by topic (Agents, Policy, Coding…), with instant search (press `/`).
 - **Around the web** — each AI tab also includes a Google News search for that AI, so the coverage is close to what you'd find by googling it, credited to the original outlet.
 - **Fresh stories while you read** — the page knows the collection schedule, checks for the new snapshot right when it's due, and offers to show new stories as soon as they land.
@@ -82,6 +82,7 @@ lib/covers.mjs       AI illustrations: themes, prompts, daily budget, Workers AI
 lib/people.mjs       well-known people, Wikipedia portraits, portrait-or-logo choice
 lib/text.mjs         entity decoding, HTML → text, URL keys
 lib/assets.mjs       content-hash URLs for the page's scripts and stylesheet
+lib/clusters.mjs     groups stories about the same event (TF-IDF similarity) and counts outlets
 site/                the static front end (index.html, styles.css, app.js, neural.js, art.js, logos.js)
 test/                unit tests (node:test), no network required
 ```

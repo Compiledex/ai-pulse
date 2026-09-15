@@ -16,6 +16,7 @@ import sharp from 'sharp';
 import { FOCUS } from './focus.mjs';
 import { parseAnthropicIndex } from './lib/anthropic.mjs';
 import { fingerprintAssets } from './lib/assets.mjs';
+import { clusterStories } from './lib/clusters.mjs';
 import {
   COVER_HEIGHT, COVER_WIDTH, BUDGET, generateImage, planCovers, poolCover,
 } from './lib/covers.mjs';
@@ -445,6 +446,23 @@ async function main() {
   await measureImages(collected.items);
   // Resolved links can reveal a search result as a story a direct source already has.
   const items = dropBoilerplateSummaries(mergeItems([collected.items]));
+  // Which companies a headline itself names — a story *about* an AI, not one mentioning it in passing.
+  for (const item of items) {
+    const named = tagTopics(item.title).filter((t) => TOPICS.find((x) => x.id === t)?.kind === 'company');
+    if (named.length) item.headlineTopics = named;
+    else delete item.headlineTopics;
+  }
+
+  // Stories about the same event, and how many outlets cover it (the page ranks on it).
+  const sourceName = Object.fromEntries(SOURCES.map((s) => [s.id, s.name]));
+  const clusters = clusterStories(items, (i) => i.publisher ?? sourceName[i.source]);
+  items.forEach((item, i) => {
+    delete item.cluster;
+    delete item.coverage;
+    if (clusters[i].coverage > 1) Object.assign(item, clusters[i]);
+  });
+  log(`events: ${new Set(clusters.map((c) => c.cluster)).size} for ${items.length} stories, ${clusters.filter((c) => c.coverage >= 3).length} stories on events covered by 3+ outlets`);
+
   const people = await collectPortraits(items, previous, now);
   const { pool: coverPool, budget: coverBudget } = await makeCovers(items, previous, now);
 
