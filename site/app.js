@@ -727,16 +727,21 @@ function updateTiming(meta, now = Date.now()) {
   return null;
 }
 
+const counting = new WeakMap(); // element -> its pending animation frame
+
+/** Counts a stat up to `target`, replacing any count still running on the same element. */
 function countUp(el, target) {
+  cancelAnimationFrame(counting.get(el));
   const duration = 1400;
   const start = performance.now();
   const tick = (t) => {
-    const p = Math.min(1, (t - start) / duration);
+    const p = Math.min(1, Math.max(0, (t - start) / duration));
     const eased = 1 - (1 - p) ** 4;
     el.textContent = Math.round(target * eased).toLocaleString('en');
-    if (p < 1) requestAnimationFrame(tick);
+    if (p < 1) counting.set(el, requestAnimationFrame(tick));
+    else counting.delete(el);
   };
-  requestAnimationFrame(tick);
+  counting.set(el, requestAnimationFrame(tick));
 }
 
 function renderStats() {

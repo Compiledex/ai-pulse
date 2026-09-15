@@ -31,7 +31,7 @@ There is no server and no database. A GitHub Actions workflow runs every half ho
 3. Entries are normalised, de-duplicated (by URL and headline — a story from a direct source beats the same story found by search), tagged with topics, and trimmed to recent stories.
 4. Stories without an image get one from their article's `og:image`. The previous live snapshot acts as a cache, so each article is only looked up once rather than on every build.
 5. The schedule is read from the cron line in the workflow file itself, so the page's countdown can't drift from the real schedule.
-6. Everything is written to `dist/data/news.json` next to the static page in `site/`, and deployed to GitHub Pages.
+6. Everything is written to `dist/data/news.json` next to the static page in `site/`, and deployed to GitHub Pages. Script and stylesheet URLs get a content hash (`app.js?v=…`), because Pages lets browsers reuse cached files for 10 minutes — without it a reload could pair a new page with an old script.
 
 The page (`site/`) is plain HTML, CSS and JavaScript modules — no framework, no build step. It reads the JSON and renders everything client-side.
 
@@ -81,6 +81,7 @@ lib/schedule.mjs     collection schedule read from the workflow's cron
 lib/covers.mjs       AI illustrations: themes, prompts, daily budget, Workers AI calls
 lib/people.mjs       well-known people, Wikipedia portraits, portrait-or-logo choice
 lib/text.mjs         entity decoding, HTML → text, URL keys
+lib/assets.mjs       content-hash URLs for the page's scripts and stylesheet
 site/                the static front end (index.html, styles.css, app.js, neural.js, art.js, logos.js)
 test/                unit tests (node:test), no network required
 ```

@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import sharp from 'sharp';
 import { FOCUS } from './focus.mjs';
 import { parseAnthropicIndex } from './lib/anthropic.mjs';
+import { fingerprintAssets } from './lib/assets.mjs';
 import {
   COVER_HEIGHT, COVER_WIDTH, BUDGET, generateImage, planCovers, poolCover,
 } from './lib/covers.mjs';
@@ -484,6 +485,7 @@ async function main() {
 
   await rm(OUT, { recursive: true, force: true });
   await cp('site', OUT, { recursive: true });
+  await fingerprintAssets(OUT);
   await mkdir(`${OUT}/data`, { recursive: true });
   await publishCovers(items, coverPool);
   await writeFile(`${OUT}/data/news.json`, JSON.stringify(snapshot));
