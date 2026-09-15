@@ -33,15 +33,32 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
 
       - name: Test
         run: node --test
+
+      # Generated illustrations live outside git. The cache carries them from
+      # build to build; if it's ever evicted, the build downloads the ones the
+      # live snapshot still uses from the site itself.
+      - name: Restore AI illustrations
+        uses: actions/cache@v4
+        with:
+          path: .covers
+          key: covers-${{ github.run_id }}
+          restore-keys: covers-
 
       # Fails (and so skips the deploy, leaving the live site untouched) only
       # if almost nothing could be collected. Individual broken sources are
       # reported in the snapshot instead.
       - name: Collect news and build
         run: node build.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - uses: actions/configure-pages@v5
 

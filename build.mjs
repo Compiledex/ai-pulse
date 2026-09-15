@@ -9,9 +9,15 @@
  * keep their images, and a source that is temporarily down keeps its last items.
  */
 
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import sharp from 'sharp';
 import { FOCUS } from './focus.mjs';
 import { parseAnthropicIndex } from './lib/anthropic.mjs';
+import {
+  COVER_HEIGHT, COVER_WIDTH, BUDGET, generateImage, planCovers, poolCover,
+} from './lib/covers.mjs';
 import { extractDescription, extractShareImage, parseFeed } from './lib/feed.mjs';
 import { fromGoogleNews, resolveGoogleNewsUrl, searchUrl } from './lib/googlenews.mjs';
 import { fetchJson, fetchText, mapLimit } from './lib/http.mjs';
@@ -19,6 +25,7 @@ import { dailyPapers, trendingModels, trendingModelsBy } from './lib/huggingface
 import {
   carryOver, dropBoilerplateSummaries, LIMITS, mergeItems, normalizeEntries, reusePrevious,
 } from './lib/pipeline.mjs';
+import { fetchPortraits, findPerson, pickOverlay, PEOPLE } from './lib/people.mjs';
 import { scheduleInfo } from './lib/schedule.mjs';
 import { isAboutAI, tagTopics, TOPICS } from './lib/topics.mjs';
 import { CATEGORIES, SOURCES } from './sources.mjs';
@@ -167,6 +174,153 @@ async function enrich(items) {
   log(`share images: looked up ${pending.length}, found ${found}`);
 }
 
+/* ---------- Pictures for picture-less stories ------------------------ */
+
+const COVERS_DIR = '.covers'; // kept between builds by the Actions cache
+const PORTRAIT_REFRESH_MS = 7 * 24 * 3600 * 1000;
+
+/**
+ * Portraits for the known people these stories mention, reusing the previous
+ * snapshot's lookups for a week. Sets `person` or `logo` on stories without a
+ * picture. Returns the portraits the page needs.
+ */
+async function collectPortraits(items, previous, now) {
+  const known = { ...(previous?.people ?? {}) };
+  const companies = FOCUS.map((f) => ({ id: f.id, re: TOPICS.find((t) => t.id === f.topic).re }));
+
+  // Only people mentioned in stories without a picture need a portrait.
+  const mentioned = new Set(items
+    .filter((i) => !i.image)
+    .map((i) => findPerson(i.title, i.summary))
+    .filter(Boolean));
+
+  const stale = [...mentioned].filter((id) => !known[id] || now - (known[id].fetchedAt ?? 0) > PORTRAIT_REFRESH_MS);
+  for (let i = 0; i < stale.length; i += 40) {
+    const batch = stale.slice(i, i + 40);
+    try {
+      const found = await fetchPortraits(batch);
+      for (const id of batch) known[id] = { ...(found[id] ?? { name: PEOPLE.find((p) => p.id === id).name }), fetchedAt: now };
+    } catch (err) {
+      log(`portraits: ${err.message} — keeping previous`);
+    }
+  }
+
+  let shown = 0;
+  for (const item of items) {
+    delete item.person;
+    delete item.logo;
+    if (item.image) continue;
+    const overlay = pickOverlay(item, known, companies);
+    if (overlay.person) {
+      item.person = overlay.person;
+      shown++;
+    }
+    if (overlay.logo) item.logo = overlay.logo;
+  }
+  log(`portraits: ${shown} stories show a portrait · ${mentioned.size} people mentioned, ${stale.length} looked up`);
+
+  // Every mentioned person's lookup is kept, portrait or not, so it isn't repeated for a week.
+  return Object.fromEntries([...mentioned].filter((id) => known[id]).map((id) => [id, known[id]]));
+}
+
+/** Makes sure every cover the snapshot refers to exists locally, downloading from the live site if the cache lost it. */
+async function restoreCovers(paths) {
+  const missing = [...new Set(paths)].filter((p) => p && !existsSync(join(COVERS_DIR, p.replace(/^covers\//, ''))));
+  let restored = 0;
+  await mapLimit(missing, 8, async (rel) => {
+    try {
+      const res = await fetch(`${SITE_URL}${rel}`, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) return;
+      const file = join(COVERS_DIR, rel.replace(/^covers\//, ''));
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(file, Buffer.from(await res.arrayBuffer()));
+      restored++;
+    } catch {
+      // Gone for good; the story just gets a pool cover instead.
+    }
+  });
+  if (missing.length) log(`covers: restored ${restored} of ${missing.length} missing files from the live site`);
+}
+
+const ownCover = (i) => i.cover?.startsWith('covers/story/');
+const coverExists = (rel) => rel && existsSync(join(COVERS_DIR, rel.replace(/^covers\//, '')));
+
+/**
+ * AI illustrations: generates what today's budget allows (see lib/covers.mjs),
+ * then gives every picture-less story either its own cover or one from the
+ * theme pool. Returns the pool and budget for the next build.
+ */
+async function makeCovers(items, previous, now) {
+  const pool = {};
+  for (const [theme, list] of Object.entries(previous?.coverPool ?? {})) pool[theme] = [...list];
+  await restoreCovers([...Object.values(pool).flat(), ...items.filter(ownCover).map((i) => i.cover)]);
+  for (const theme of Object.keys(pool)) pool[theme] = pool[theme].filter(coverExists);
+  for (const item of items) if (ownCover(item) && !coverExists(item.cover)) delete item.cover;
+
+  let budget = previous?.coverBudget ?? null;
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+
+  if (token && accountId) {
+    const recent = (i) => now - Date.parse(i.published) < 24 * 3600 * 1000;
+    const stories = items.filter((i) => i.image === '' && !ownCover(i) && recent(i));
+    const { plan, used } = planCovers({ pool, budget, stories, now });
+    budget = { ...used };
+    let made = 0;
+
+    for (const task of plan) {
+      try {
+        const { jpeg, neurons } = await generateImage(task.prompt, { accountId, token });
+        const webp = await sharp(jpeg).resize(COVER_WIDTH, COVER_HEIGHT, { fit: 'cover' }).webp({ quality: 74 }).toBuffer();
+        const rel = task.kind === 'pool' ? `pool/${task.theme}-${task.variant}.webp` : `story/${task.id}.webp`;
+        await mkdir(dirname(join(COVERS_DIR, rel)), { recursive: true });
+        await writeFile(join(COVERS_DIR, rel), webp);
+        budget.neurons += neurons;
+        if (task.kind === 'pool') pool[task.theme] = [...new Set([...(pool[task.theme] ?? []), `covers/${rel}`])];
+        else {
+          budget.stories++;
+          const item = items.find((i) => i.id === task.id);
+          if (item) item.cover = `covers/${rel}`;
+        }
+        made++;
+      } catch (err) {
+        log(`covers: generation failed (${err.message})`);
+        if (err.quota) {
+          budget.neurons = BUDGET.neuronsPerDay; // done for today
+          break;
+        }
+      }
+    }
+    log(`covers: generated ${made} of ${plan.length} planned · today ${Math.round(budget.neurons)} neurons, ${budget.stories} story covers`);
+  } else {
+    log('covers: no Cloudflare credentials — reusing existing covers only');
+  }
+
+  for (const item of items) {
+    if (item.image || ownCover(item)) continue;
+    const cover = poolCover(pool, item);
+    if (cover) item.cover = cover;
+    else delete item.cover;
+  }
+  return { pool, budget };
+}
+
+/** Copies the covers the snapshot uses into the site, and forgets story covers nothing uses any more. */
+async function publishCovers(items, pool) {
+  const used = new Set([...Object.values(pool).flat(), ...items.map((i) => i.cover).filter(Boolean)]);
+  for (const rel of used) {
+    const from = join(COVERS_DIR, rel.replace(/^covers\//, ''));
+    if (!existsSync(from)) continue;
+    await mkdir(dirname(join(OUT, rel)), { recursive: true });
+    await cp(from, join(OUT, rel));
+  }
+  if (existsSync(join(COVERS_DIR, 'story'))) {
+    for (const name of await readdir(join(COVERS_DIR, 'story'))) {
+      if (!used.has(`covers/story/${name}`)) await rm(join(COVERS_DIR, 'story', name), { force: true });
+    }
+  }
+}
+
 async function withFallback(label, fn, fallback) {
   try {
     const value = await fn();
@@ -200,6 +354,8 @@ async function main() {
   await enrich(collected.items);
   // Resolved links can reveal a search result as a story a direct source already has.
   const items = dropBoilerplateSummaries(mergeItems([collected.items]));
+  const people = await collectPortraits(items, previous, now);
+  const { pool: coverPool, budget: coverBudget } = await makeCovers(items, previous, now);
 
   const [models, papers, focus] = await Promise.all([
     withFallback('trending models', () => trendingModels(12), previous?.models),
@@ -227,6 +383,9 @@ async function main() {
       id, name, category, weight, color, home, status: statuses[id],
     })),
     focus,
+    people,
+    coverPool,
+    coverBudget,
     items,
     models,
     papers,
@@ -235,6 +394,7 @@ async function main() {
   await rm(OUT, { recursive: true, force: true });
   await cp('site', OUT, { recursive: true });
   await mkdir(`${OUT}/data`, { recursive: true });
+  await publishCovers(items, coverPool);
   await writeFile(`${OUT}/data/news.json`, JSON.stringify(snapshot));
 
   const failed = Object.values(statuses).filter((s) => !s.ok).length;

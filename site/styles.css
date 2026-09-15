@@ -1517,7 +1517,8 @@ button, input { font: inherit; color: inherit; }
 }
 
 .card:hover .card-media img,
-.card:hover .card-media .art { transform: scale(1.06); }
+.card:hover .card-media .art,
+.card:hover .card-media .composite-bg { transform: scale(1.06); }
 
 img.loading { opacity: 0; filter: blur(12px); }
 
@@ -1742,6 +1743,103 @@ img.loading { opacity: 0; filter: blur(12px); }
 @container (max-width: 180px) {
   .art-label { display: none; }
 }
+
+/* ---------- Composite covers: AI illustration + portrait or logo ----- */
+
+.composite {
+  --c: var(--violet);
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  container-type: inline-size;
+  background: var(--bg-raised);
+}
+
+.composite > .composite-bg,
+.composite > .art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The real photo, unaltered, framed like a news graphic */
+.portrait {
+  position: absolute;
+  z-index: 1;
+  right: 6cqi;
+  bottom: 0;
+  height: 86%;
+  aspect-ratio: 3 / 4;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 3.5cqi 3.5cqi 0 0;
+  border: 1px solid color-mix(in srgb, var(--c) 55%, rgba(255, 255, 255, 0.25));
+  border-bottom: 0;
+  background: #0b0d16;
+  box-shadow:
+    0 0 0 4px rgba(5, 6, 11, 0.35),
+    0 0 42px -4px color-mix(in srgb, var(--c) 65%, transparent);
+}
+
+.card-media .portrait img,
+.featured .media .portrait img,
+.thumb .portrait img,
+.portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 18%;
+  transform: none !important;
+}
+
+.portrait::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 60%, rgba(5, 6, 11, 0.6));
+  pointer-events: none;
+}
+
+.photo-credit {
+  position: absolute;
+  z-index: 3;
+  right: 6cqi;
+  bottom: 1.6cqi;
+  max-width: 34cqi;
+  font: 500 max(8px, 1.8cqi)/1.2 var(--font-mono);
+  color: rgba(255, 255, 255, 0.72);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.ai-badge {
+  position: absolute;
+  z-index: 2;
+  left: 3.2cqi;
+  bottom: 3.2cqi;
+  padding: 0.5cqi 1.6cqi;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(5, 6, 11, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  font: 600 max(8px, 1.9cqi)/1.5 var(--font-mono);
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+@container (max-width: 260px) {
+  .photo-credit, .ai-badge { display: none; }
+}
+
+.featured .ai-badge { top: 4cqi; bottom: auto; left: auto; right: 4cqi; }
+.featured .portrait { right: 8cqi; height: 82%; }
 
 /* ---------- Skeletons ------------------------------------------------ */
 

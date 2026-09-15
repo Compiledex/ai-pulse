@@ -1,4 +1,4 @@
-import { coverArt } from './art.js';
+import { coverArt, marksHtml } from './art.js';
 import { logo } from './logos.js';
 import { startNeural } from './neural.js';
 
@@ -118,7 +118,7 @@ function isNew(item) {
  */
 function coverMarkIds(item) {
   const list = state.data?.focus ?? [];
-  const ids = new Set(item.focus ?? []);
+  const ids = new Set([item.logo, ...(item.focus ?? [])].filter(Boolean));
   for (const f of list) if (f.sources.includes(item.source)) ids.add(f.id);
   for (const f of list) if (item.topics?.includes(f.topic)) ids.add(f.id);
   return [...ids].filter((id) => focusById(id)).slice(0, 3);
@@ -128,13 +128,37 @@ const marksFor = (ids) => ids
   .map((id) => ({ svg: logo(id, 'art-logo'), color: focusById(id)?.color }))
   .filter((m) => m.svg && m.color);
 
-/** An <img> that swaps itself for generated art if it fails to load. */
+/**
+ * The picture for a story without one of its own: an AI illustration (its own
+ * or from the theme pool) with, on top, the real portrait of the person it's
+ * about or the neon logo of the AI it's about. Photo credit and an "AI
+ * illustration" label are part of the image.
+ */
+function composite(item, label, color, seed) {
+  const person = item.person ? state.data.people?.[item.person] : null;
+  const portrait = person?.image ? person : null;
+  const marks = portrait ? [] : marksFor(coverMarkIds(item));
+
+  if (!item.cover && !portrait) return coverArt(seed, color, label, marks);
+
+  const backdrop = item.cover
+    ? `<img class="composite-bg loading" src="${esc(item.cover)}" alt="" loading="lazy" decoding="async" data-seed="${esc(seed)}" data-color="${esc(color)}" data-label="${esc(label)}">`
+    : coverArt(seed, color, label, [], { bare: true });
+  const overlay = portrait
+    ? `<figure class="portrait"><img src="${esc(safeUrl(portrait.image))}" alt="${esc(portrait.name)}" loading="lazy" decoding="async" referrerpolicy="no-referrer"></figure>
+       <span class="photo-credit">Photo: ${esc(portrait.credit)}</span>`
+    : marks.length ? marksHtml(marks) : '';
+  const badge = item.cover ? '<span class="ai-badge">AI illustration</span>' : '';
+
+  return `<div class="composite" style="--c:${esc(color)}">${backdrop}${overlay}${badge}</div>`;
+}
+
+/** A story's picture: its own image (falling back to a composite if it fails to load), or a composite. */
 function media(item, label, color, seed = item.id) {
   const url = item.image || item.thumbnail;
-  const markIds = coverMarkIds(item);
-  if (!url) return coverArt(seed, color, label, marksFor(markIds));
+  if (!url) return composite(item, label, color, seed);
   return `<img src="${esc(safeUrl(url))}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"
-    class="loading" data-seed="${esc(seed)}" data-color="${esc(color)}" data-label="${esc(label)}" data-marks="${esc(markIds.join(','))}">`;
+    class="loading" data-seed="${esc(seed)}" data-color="${esc(color)}" data-label="${esc(label)}" data-marks="${esc(coverMarkIds(item).join(','))}">`;
 }
 
 /** The outlet to credit: the original publisher for stories found through Google News. */
@@ -933,6 +957,13 @@ function bindEvents() {
     if (!(img instanceof HTMLImageElement)) return;
     if (img.classList.contains('avatar')) {
       img.outerHTML = `<span class="avatar">${esc(img.dataset.initial ?? '?')}</span>`;
+    } else if (img.closest('.portrait')) {
+      // Portrait unavailable: keep the illustration, drop the frame and credit.
+      const box = img.closest('.composite');
+      box.querySelector('.photo-credit')?.remove();
+      img.closest('.portrait').remove();
+    } else if (img.classList.contains('composite-bg')) {
+      img.outerHTML = coverArt(img.dataset.seed, img.dataset.color, img.dataset.label, [], { bare: true });
     } else if (img.dataset.seed) {
       const markIds = (img.dataset.marks ?? '').split(',').filter(Boolean);
       img.outerHTML = coverArt(img.dataset.seed, img.dataset.color, img.dataset.label, marksFor(markIds));

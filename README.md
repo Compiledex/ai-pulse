@@ -33,7 +33,16 @@ There is no server and no database. A GitHub Actions workflow runs twice an hour
 5. The schedule is read from the cron line in the workflow file itself, so the page's countdown can't drift from the real schedule.
 6. Everything is written to `dist/data/news.json` next to the static page in `site/`, and deployed to GitHub Pages.
 
-The page (`site/`) is plain HTML, CSS and JavaScript modules — no framework, no build step. It reads the JSON and renders everything client-side. Some publishers (Reuters, Bloomberg, the FT, OpenAI) block automated requests, so their share images can't be fetched; those stories get generated cover art instead — the neon logo of each AI the story is about, or the outlet's name as a masthead.
+The page (`site/`) is plain HTML, CSS and JavaScript modules — no framework, no build step. It reads the JSON and renders everything client-side.
+
+### Pictures for stories that have none
+
+Some publishers (Reuters, Bloomberg, the FT, OpenAI) block automated requests, so their share images can't be fetched. Those stories get a composed cover instead:
+
+- **An AI illustration**, generated with FLUX.1 schnell on [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/models/flux-1-schnell/) in one consistent style that matches the page, and labelled "AI illustration". The free tier allows about 55 images a day, so [`lib/covers.mjs`](lib/covers.mjs) spends it on a pool of illustrations per theme (so every story gets one straight away), then on illustrations of their own for the newest stories. Prompts never name real people and ask for no faces, text or logos.
+- **On top, the person or company it's about.** For well-known people ([`lib/people.mjs`](lib/people.mjs)) that's their real, unaltered portrait from Wikipedia — freely licensed only, credited on the image. Faces are never generated or edited: an invented image of a real person on a news page would read as a photo of something that didn't happen. With no free portrait, or when the headline leads with the company, it's the neon logo of the AI instead.
+
+Generated images are stored outside git: the Actions cache keeps them between builds, and anything the cache loses is downloaded back from the live site. Without Cloudflare credentials the build still runs and uses the illustrations it already has.
 
 ### Failure handling
 
@@ -54,16 +63,19 @@ lib/huggingface.mjs  trending models and daily papers
 lib/pipeline.mjs     pure transforms: normalise, merge, de-duplicate, cache reuse
 lib/topics.mjs       keyword topic tagging
 lib/schedule.mjs     collection schedule read from the workflow's cron
+lib/covers.mjs       AI illustrations: themes, prompts, daily budget, Workers AI calls
+lib/people.mjs       well-known people, Wikipedia portraits, portrait-or-logo choice
 lib/text.mjs         entity decoding, HTML → text, URL keys
 site/                the static front end (index.html, styles.css, app.js, neural.js, art.js, logos.js)
 test/                unit tests (node:test), no network required
 ```
 
-No npm dependencies — Node 22+ only.
+Node 22+. One dependency: [`sharp`](https://sharp.pixelplumbing.com/), to shrink generated illustrations to 768×432 WebP.
 
 ## Development
 
 ```sh
+npm ci           # install sharp
 npm test         # unit tests
 npm run dev      # collect news once, then serve at http://localhost:4173
 npm run serve    # serve without re-collecting

@@ -116,7 +116,12 @@ const PATTERNS = [waves, rings, network, horizon];
 /**
  * @param marks  up to three `{ svg, color }` logos, in order of relevance
  */
-export function coverArt(seed, color, label, marks = []) {
+/** The neon logo tiles, also used over AI illustrations. */
+export function marksHtml(marks) {
+  return `<div class="art-marks">${marks.map((m) => `<span class="art-mark" style="--c:${esc(m.color)}">${m.svg}</span>`).join('')}</div>`;
+}
+
+export function coverArt(seed, color, label, marks = [], { bare = false } = {}) {
   const r = rng(hash(seed));
   const W = 400;
   const H = 225;
@@ -128,9 +133,9 @@ export function coverArt(seed, color, label, marks = []) {
   const g1 = [f(W * (0.1 + r() * 0.4)), f(H * r())];
   const g2 = [f(W * (0.5 + r() * 0.5)), f(H * r())];
 
-  const overlay = marks.length
-    ? `<div class="art-marks">${marks.map((m) => `<span class="art-mark" style="--c:${esc(m.color)}">${m.svg}</span>`).join('')}</div><span class="art-label">${esc(label)}</span>`
-    : `<span class="art-title">${esc(label)}</span>`;
+  let overlay = '';
+  if (marks.length) overlay = `${marksHtml(marks)}<span class="art-label">${esc(label)}</span>`;
+  else if (!bare) overlay = `<span class="art-title">${esc(label)}</span>`;
 
   return `<div class="art" role="img" aria-label="${esc(label)}"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
 <defs>
