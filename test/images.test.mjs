@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { sizeHint, upgradeImageUrl } from '../lib/images.mjs';
+import { isBrandedShareImage, sizeHint, upgradeImageUrl } from '../lib/images.mjs';
 import { reusePrevious } from '../lib/pipeline.mjs';
 
 test('upgradeImageUrl asks CDNs for a larger rendition of the same picture', () => {
@@ -15,6 +15,12 @@ test('upgradeImageUrl asks CDNs for a larger rendition of the same picture', () 
   assert.equal(upgradeImageUrl('https://lh3.googleusercontent.com/abc123=w528-h297-n-nu'), 'https://lh3.googleusercontent.com/abc123=w1600');
   const guardian = 'https://i.guim.co.uk/img/media/abc/master/5001.jpg?width=700&quality=85&s=signature';
   assert.equal(upgradeImageUrl(guardian), guardian, 'signed URLs are left alone');
+});
+
+test('logo-stamped share images are recognised', () => {
+  assert.ok(isBrandedShareImage('https://i.guim.co.uk/img/media/x/master/1.jpg?width=1200&height=630&quality=85&auto=format&fit=crop&overlay-align=bottom%2Cleft&overlay-width=100p&overlay-base64=L2ltZy&s=abc'));
+  assert.ok(!isBrandedShareImage('https://i.guim.co.uk/img/media/x/master/1.jpg?width=700&quality=85&s=abc'));
+  assert.ok(!isBrandedShareImage(null));
 });
 
 test('sizeHint reads the width a URL claims', () => {

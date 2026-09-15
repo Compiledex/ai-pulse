@@ -26,7 +26,7 @@ import {
   carryOver, dropBoilerplateSummaries, LIMITS, mergeItems, normalizeEntries, reusePrevious,
 } from './lib/pipeline.mjs';
 import {
-  MIN_WIDTH, PREFERRED_WIDTH, probeImageSize, sizeHint, upgradeImageUrl,
+  isBrandedShareImage, MIN_WIDTH, PREFERRED_WIDTH, probeImageSize, sizeHint, upgradeImageUrl,
 } from './lib/images.mjs';
 import { fetchPortraits, findPerson, pickOverlay, PEOPLE } from './lib/people.mjs';
 import { scheduleInfo } from './lib/schedule.mjs';
@@ -164,6 +164,13 @@ function prepareImages(items) {
   let upgraded = 0;
   let queued = 0;
   for (const item of items) {
+    // An earlier build picked a logo-stamped share image: go back to the feed's own picture.
+    if (item.feedImage && isBrandedShareImage(item.image)) {
+      item.image = item.feedImage;
+      delete item.feedImage;
+      delete item.imageWidth;
+      item.keepFeedImage = true;
+    }
     if (!item.image?.startsWith('http') || item.imageWidth) continue;
     const better = upgradeImageUrl(item.image);
     if (better !== item.image) {
@@ -172,7 +179,7 @@ function prepareImages(items) {
       upgraded++;
     }
     const hint = sizeHint(item.image);
-    if (hint !== null && hint < PREFERRED_WIDTH && !item.googleUrl) {
+    if (hint !== null && hint < PREFERRED_WIDTH && !item.googleUrl && !item.keepFeedImage) {
       item.feedImage ??= item.image;
       item.image = null;
       queued++;
@@ -190,7 +197,8 @@ async function enrich(items) {
   await mapLimit(pending, 10, async (item) => {
     try {
       const html = await fetchText(item.url, { timeoutMs: 8000, maxBytes: 400_000, retries: 0 });
-      const share = extractShareImage(html, item.url);
+      const found = extractShareImage(html, item.url);
+      const share = isBrandedShareImage(found) && item.feedImage ? null : found;
       item.image = share ?? item.feedImage ?? '';
       if (!item.summary) {
         item.summary = extractDescription(html);
