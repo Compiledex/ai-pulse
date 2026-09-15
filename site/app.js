@@ -727,44 +727,6 @@ function updateTiming(meta, now = Date.now()) {
   return null;
 }
 
-function countdown(ms) {
-  const total = Math.ceil(ms / 1000);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const sec = total % 60;
-  return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-}
-
-/** "Updated 14m ago" plus a live countdown and progress ring to the next snapshot. Runs every second. */
-function renderClock() {
-  const meta = state.meta;
-  if (!meta) return;
-  const now = Date.now();
-  const collected = Date.parse(meta.generatedAt);
-  const fmt = (t) => new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-
-  $('#updated').textContent = timeAgo(meta.generatedAt, now);
-  $('#live').classList.toggle('stale', now - collected > 2 * HOUR);
-
-  const timing = updateTiming(meta, now);
-  const next = $('#next');
-  next.hidden = !timing;
-  if (!timing) {
-    $('#live').title = `News collected at ${fmt(collected)}`;
-    return;
-  }
-
-  next.classList.toggle('due', timing.waiting);
-  $('#next-in').textContent = timing.waiting ? 'soon' : countdown(timing.next - now);
-
-  const progress = Math.min(1, Math.max(0, (now - timing.prev) / (timing.next - timing.prev || 1)));
-  $('#ring-fill').style.strokeDashoffset = String(100 - progress * 100);
-
-  const slots = meta.schedule?.minutes?.map((m) => `:${String(m).padStart(2, '0')}`).join(' and ');
-  $('#live').title = `News collected at ${fmt(collected)}. `
-    + (slots ? `New collections are scheduled at ${slots} past each hour (UTC); GitHub sometimes starts one late or skips it.` : `Next collection expected around ${fmt(timing.next)}.`);
-}
-
 function countUp(el, target) {
   const duration = 1400;
   const start = performance.now();
@@ -791,7 +753,6 @@ function renderStats() {
     new: state.lastVisit === null ? live : newCount,
   };
   $('#new-label').textContent = state.lastVisit === null ? 'sources live right now' : 'new since your last visit';
-  $('#today').textContent = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
   for (const el of $$('[data-count]')) countUp(el, values[el.dataset.count] ?? 0);
 }
@@ -895,7 +856,6 @@ function renderAll() {
   renderHero();
   renderFocusTabs();
   renderFocusPanel();
-  renderClock();
   renderStats();
   renderTop();
   renderTicker();
@@ -911,7 +871,6 @@ async function poll() {
     const fresh = await loadData();
     if (fresh.generatedAt === state.meta.generatedAt) return;
     state.meta = metaOf(fresh);
-    renderClock();
 
     const known = new Set(state.data.items.map((i) => i.id));
     const added = fresh.items.filter((i) => !known.has(i.id) && inFocus(i)).length;
@@ -1144,14 +1103,12 @@ async function main() {
   } catch (err) {
     $('#top-stories').innerHTML = '';
     $('#feed').innerHTML = `<div class="empty"><strong>Couldn't load the news right now.</strong>${esc(err.message)} — try refreshing in a minute.</div>`;
-    $('#updated').textContent = 'offline';
     return;
   }
 
   state.meta = metaOf(state.data);
   state.focus = focusById(new URLSearchParams(location.search).get('ai'));
   renderAll();
-  setInterval(renderClock, 1000);
   schedulePoll();
 }
 

@@ -10,7 +10,7 @@ A self-updating hub for everything happening in AI — lab announcements, tech j
 - **Top stories** — ranked by recency, source weight and (for Hacker News) community votes, with at most one story per source.
 - **Latest stories** — the last 30 days, grouped by day, filterable by source type and by topic (Agents, Policy, Coding…), with instant search (press `/`).
 - **Around the web** — each AI tab also includes a Google News search for that AI, so the coverage is close to what you'd find by googling it, credited to the original outlet.
-- **Live update clock** — the header shows when the news was collected and counts down to the next collection. The page checks for the new snapshot right when it's due, and offers to show fresh stories as soon as they land. If GitHub skips a scheduled run, the countdown moves on to the next slot rather than waiting forever.
+- **Fresh stories while you read** — the page knows the collection schedule, checks for the new snapshot right when it's due, and offers to show new stories as soon as they land.
 - **NEW badges** — stories published since your previous visit are marked.
 - **Trending models** and **papers everyone's reading**, from the Hugging Face API.
 - **Source status** — every source's health at the last collection, so a broken feed is visible rather than silently missing.
@@ -57,7 +57,7 @@ X-GitHub-Api-Version: 2022-11-28
 {"ref":"main"}
 ```
 
-GitHub answers `204 No Content` when the build is queued. The workflow's own `schedule` stays on the same minutes as a backup, and the page's countdown reads it, so a test pins it to :00 and :30. (A Cloudflare Worker Cron Trigger was tried first, but never fired on the account.)
+GitHub answers `204 No Content` when the build is queued. The workflow's own `schedule` stays on the same minutes as a backup; the page reads it to know when to look for new stories, so a test pins it to :00 and :30. (A Cloudflare Worker Cron Trigger was tried first, but never fired on the account.)
 
 ### Failure handling
 
