@@ -359,7 +359,11 @@ button, input { font: inherit; color: inherit; }
   max-width: 100%;
   font: italic 400 1.08em/0.9 var(--font-serif);
   letter-spacing: -0.02em;
-  padding-right: 0.08em;
+  /* The gradient is painted through the text, so it only reaches as far as this
+     box. The tight line-height would cut descenders (g, y) and the italic
+     overhang: pad the box out, and pull the layout back with negative margins. */
+  padding: 0.04em 0.12em 0.2em 0.06em;
+  margin: -0.04em 0 -0.2em -0.06em;
   background: var(--subject-gradient, var(--spectrum));
   background-size: 200% 100%;
   -webkit-background-clip: text;
