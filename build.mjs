@@ -25,6 +25,9 @@ import { dailyPapers, trendingModels, trendingModelsBy } from './lib/huggingface
 import {
   carryOver, dropBoilerplateSummaries, LIMITS, mergeItems, normalizeEntries, reusePrevious,
 } from './lib/pipeline.mjs';
+import {
+  MIN_WIDTH, PREFERRED_WIDTH, probeImageSize, sizeHint, upgradeImageUrl,
+} from './lib/images.mjs';
 import { fetchPortraits, findPerson, pickOverlay, PEOPLE } from './lib/people.mjs';
 import { scheduleInfo } from './lib/schedule.mjs';
 import { isAboutAI, tagTopics, TOPICS } from './lib/topics.mjs';
@@ -39,6 +42,9 @@ const IMAGE_LOOKUPS = 150;
 
 /** Google News links resolved per build (two requests each); the rest wait. */
 const LINK_RESOLVES = 80;
+
+/** Pictures measured per build (first bytes only); the rest wait. */
+const IMAGE_PROBES = 300;
 
 /** Publishing fewer stories than this means something is badly wrong upstream. */
 const MIN_ITEMS = 25;
@@ -150,6 +156,31 @@ async function resolveGoogleLinks(items) {
   log(`google news links: resolved ${resolved} of ${pending.length}`);
 }
 
+/**
+ * Small feed pictures: ask the CDN for a larger rendition where the URL allows,
+ * and queue the rest for a share-image lookup (the original stays in `feedImage`).
+ */
+function prepareImages(items) {
+  let upgraded = 0;
+  let queued = 0;
+  for (const item of items) {
+    if (!item.image?.startsWith('http') || item.imageWidth) continue;
+    const better = upgradeImageUrl(item.image);
+    if (better !== item.image) {
+      item.feedImage ??= item.image;
+      item.image = better;
+      upgraded++;
+    }
+    const hint = sizeHint(item.image);
+    if (hint !== null && hint < PREFERRED_WIDTH && !item.googleUrl) {
+      item.feedImage ??= item.image;
+      item.image = null;
+      queued++;
+    }
+  }
+  log(`pictures: ${upgraded} upgraded to a larger rendition, ${queued} small ones queued for a share image`);
+}
+
 /** Fills in share images (and missing teasers) by reading each article's <head>. */
 async function enrich(items) {
   // Unresolved Google links would only return Google's page; they wait for the next build.
@@ -159,19 +190,53 @@ async function enrich(items) {
   await mapLimit(pending, 10, async (item) => {
     try {
       const html = await fetchText(item.url, { timeoutMs: 8000, maxBytes: 400_000, retries: 0 });
-      item.image = extractShareImage(html, item.url) ?? '';
+      const share = extractShareImage(html, item.url);
+      item.image = share ?? item.feedImage ?? '';
       if (!item.summary) {
         item.summary = extractDescription(html);
         item.topics = tagTopics(`${item.title} ${item.summary}`);
       }
-      if (item.image) found++;
+      if (share) found++;
     } catch (err) {
       // A 4xx (e.g. bot protection) won't change next hour; a timeout might.
-      if (err.status) item.image = '';
+      if (err.status) item.image = item.feedImage ?? '';
     }
   });
 
+  // Not looked up this time (or timed out): show the feed's picture meanwhile and try again next build.
+  for (const item of items) {
+    if (item.image === null && item.feedImage) {
+      item.image = item.feedImage;
+      delete item.feedImage;
+    }
+  }
   log(`share images: looked up ${pending.length}, found ${found}`);
+}
+
+/** Measures pictures once; ones too small to look good are dropped so the story gets an illustration. */
+async function measureImages(items) {
+  const pending = items.filter((i) => i.image?.startsWith('http') && !i.imageWidth).slice(0, IMAGE_PROBES);
+  let dropped = 0;
+  await mapLimit(pending, 12, async (item) => {
+    try {
+      const size = await probeImageSize(item.image);
+      if (!size) return;
+      item.imageWidth = size.width;
+      if (size.width < MIN_WIDTH) {
+        item.feedImage ??= item.image;
+        item.image = '';
+        dropped++;
+      }
+    } catch (err) {
+      if (err.status === 404 || err.status === 410) {
+        item.feedImage ??= item.image;
+        item.image = '';
+        item.imageWidth = 1;
+      }
+      // Anything else (e.g. hotlink protection for servers) may still load in a browser; leave it.
+    }
+  });
+  log(`pictures: measured ${pending.length}, dropped ${dropped} under ${MIN_WIDTH}px`);
 }
 
 /* ---------- Pictures for picture-less stories ------------------------ */
@@ -366,7 +431,9 @@ async function main() {
   const collected = await collectNews(previous, now);
   const { statuses } = collected;
   await resolveGoogleLinks(collected.items);
+  prepareImages(collected.items);
   await enrich(collected.items);
+  await measureImages(collected.items);
   // Resolved links can reveal a search result as a story a direct source already has.
   const items = dropBoilerplateSummaries(mergeItems([collected.items]));
   const people = await collectPortraits(items, previous, now);

@@ -172,6 +172,9 @@ function sourceBadge(item) {
 
 /* ---------- Top stories --------------------------------------------- */
 
+/** Measured pictures must be at least `width` wide; unmeasured ones (not checked yet) get the benefit of the doubt. */
+const sharpEnough = (item, width) => !item.imageWidth || item.imageWidth >= width;
+
 function score(item, now) {
   const src = sourceOf(item);
   const ageHours = (now - Date.parse(item.published)) / HOUR;
@@ -190,7 +193,8 @@ function pickTopStories(items, now) {
   // One story per source, so the top of the page isn't five TechCrunch links.
   const picked = [];
   const usedSources = new Set();
-  const featured = pool.find((i) => i.image) ?? pool[0];
+  // The big slot needs a big picture: a small one would be stretched into visible pixels.
+  const featured = pool.find((i) => i.image && sharpEnough(i, 1000)) ?? pool.find((i) => i.image) ?? pool[0];
   if (featured) { picked.push(featured); usedSources.add(featured.source); }
   for (const item of pool) {
     if (picked.length >= 5) break;
@@ -420,7 +424,7 @@ function renderFeed() {
   }
 
   $('#feed').innerHTML = [...groups].map(([dayStart, items]) => {
-    const leadIndex = items.length >= 4 ? items.findIndex((i) => i.image) : -1;
+    const leadIndex = items.length >= 4 ? items.findIndex((i) => i.image && sharpEnough(i, 900)) : -1;
     return `
     <section class="day">
       <h3 class="day-head">${dayLabel(dayStart)}<small>${items.length} ${items.length === 1 ? 'story' : 'stories'}</small></h3>
