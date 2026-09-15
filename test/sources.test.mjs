@@ -56,7 +56,8 @@ test('Google News: credits the outlet, strips its name from the headline, drops 
   assert.equal(a.title, 'US judge stays on OpenAI case');
   assert.equal(a.publisher, 'Reuters');
   assert.equal(a.summary, '');
-  assert.equal(a.image, '', 'marked as looked-up so the build never scrapes Google redirect pages');
+  assert.equal(a.image, null, 'looked up after the link is resolved');
+  assert.equal(a.googleUrl, 'https://news.google.com/rss/articles/CBMiabc?oc=5');
   assert.equal(a.via, 'Google News');
   assert.equal(b.title, 'Pay-per-view - AI', 'only the trailing publisher is removed');
 
@@ -99,4 +100,41 @@ test('every source has a known category and every focus AI has a search', () => 
   for (const f of FOCUS) assert.ok(f.search, `${f.id} has no search`);
   const ids = SOURCES.map((s) => s.id);
   assert.equal(new Set(ids).size, ids.length, 'source ids are unique');
+});
+
+test('Google News link resolution: parsing each step', async () => {
+  const { articleId, parseArticleParams, decodeRequestBody, parseDecodeResponse } = await import('../lib/googlenews.mjs');
+  assert.equal(articleId('https://news.google.com/rss/articles/CBMiXYZ?oc=5'), 'CBMiXYZ');
+  assert.equal(articleId('https://example.com/rss/articles/CBMiXYZ'), null);
+
+  assert.deepEqual(parseArticleParams('<c-wiz data-n-a-sg="SIG123" data-n-a-ts="1757880000"></c-wiz>'), { signature: 'SIG123', timestamp: 1757880000 });
+  assert.equal(parseArticleParams('<html>consent page</html>'), null);
+
+  const body = new URLSearchParams(decodeRequestBody('CBMiXYZ', { signature: 'SIG123', timestamp: 1757880000 }));
+  const [[[rpc, inner]]] = JSON.parse(body.get('f.req'));
+  assert.equal(rpc, 'Fbv4je');
+  assert.deepEqual(JSON.parse(inner).slice(-3), ['CBMiXYZ', 1757880000, 'SIG123']);
+
+  const response = `)]}'\n\n${JSON.stringify([['wrb.fr', 'Fbv4je', JSON.stringify(['garturlres', 'https://www.cnbc.com/2026/09/14/story.html', 1])]])}`;
+  assert.equal(parseDecodeResponse(response), 'https://www.cnbc.com/2026/09/14/story.html');
+  assert.equal(parseDecodeResponse('garbage'), null);
+});
+
+test('reusePrevious keeps resolved Google links and ignores caches from before resolution', async () => {
+  const { reusePrevious } = await import('../lib/pipeline.mjs');
+  const fresh = { url: 'https://news.google.com/rss/articles/A', googleUrl: 'https://news.google.com/rss/articles/A', image: null, summary: '', title: 'T', topics: [] };
+
+  const [resolved] = reusePrevious([fresh], [{ ...fresh, url: 'https://www.cnbc.com/a', image: 'https://img.example/a.jpg' }]);
+  assert.equal(resolved.url, 'https://www.cnbc.com/a');
+  assert.equal(resolved.image, 'https://img.example/a.jpg');
+
+  const [stale] = reusePrevious([fresh], [{ url: 'https://news.google.com/rss/articles/A', image: '', summary: '' }]);
+  assert.equal(stale.image, null, 'an old "no image" for the redirect page is not trusted');
+  assert.equal(stale.url, fresh.url);
+});
+
+test('normalizeEntries keeps the Google News identity of a result', () => {
+  const [item] = normalizeEntries({ id: 'web' }, fromGoogleNews(parseFeed(GOOGLE_NEWS, 'https://news.google.com/'), { limit: 1 }), Date.parse('2026-09-15T00:00:00Z'));
+  assert.equal(item.googleUrl, 'https://news.google.com/rss/articles/CBMiabc?oc=5');
+  assert.equal(item.image, null);
 });

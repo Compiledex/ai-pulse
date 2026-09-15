@@ -13,7 +13,7 @@ import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { FOCUS } from './focus.mjs';
 import { parseAnthropicIndex } from './lib/anthropic.mjs';
 import { extractDescription, extractShareImage, parseFeed } from './lib/feed.mjs';
-import { fromGoogleNews, searchUrl } from './lib/googlenews.mjs';
+import { fromGoogleNews, resolveGoogleNewsUrl, searchUrl } from './lib/googlenews.mjs';
 import { fetchJson, fetchText, mapLimit } from './lib/http.mjs';
 import { dailyPapers, trendingModels, trendingModelsBy } from './lib/huggingface.mjs';
 import {
@@ -27,8 +27,11 @@ const OUT = 'dist';
 const SITE_URL = 'https://compiledex.github.io/ai-pulse/';
 const PREVIOUS_SNAPSHOT = process.env.PREVIOUS_SNAPSHOT ?? `${SITE_URL}data/news.json`;
 
-/** Page lookups for share images per build; the rest wait for the next hour. */
+/** Page lookups for share images per build; the rest wait for the next build. */
 const IMAGE_LOOKUPS = 150;
+
+/** Google News links resolved per build (two requests each); the rest wait. */
+const LINK_RESOLVES = 80;
 
 /** Publishing fewer stories than this means something is badly wrong upstream. */
 const MIN_ITEMS = 25;
@@ -106,9 +109,27 @@ async function collectNews(previous, now) {
   return { items: reusePrevious(mergeItems(lists), previous?.items), statuses };
 }
 
+const unresolved = (i) => i.googleUrl && i.url === i.googleUrl;
+
+/** Swaps Google News redirect links for the real article URLs. */
+async function resolveGoogleLinks(items) {
+  const pending = items.filter((i) => unresolved(i) && i.image === null).slice(0, LINK_RESOLVES);
+  let resolved = 0;
+  await mapLimit(pending, 4, async (item) => {
+    try {
+      item.url = await resolveGoogleNewsUrl(item.googleUrl);
+      resolved++;
+    } catch (err) {
+      if (err.permanent) item.image = ''; // keeps the Google link; don't try again
+    }
+  });
+  log(`google news links: resolved ${resolved} of ${pending.length}`);
+}
+
 /** Fills in share images (and missing teasers) by reading each article's <head>. */
 async function enrich(items) {
-  const pending = items.filter((i) => i.image === null).slice(0, IMAGE_LOOKUPS);
+  // Unresolved Google links would only return Google's page; they wait for the next build.
+  const pending = items.filter((i) => i.image === null && !unresolved(i)).slice(0, IMAGE_LOOKUPS);
   let found = 0;
 
   await mapLimit(pending, 10, async (item) => {
@@ -158,8 +179,10 @@ async function main() {
   log('sources:');
   const collected = await collectNews(previous, now);
   const { statuses } = collected;
+  await resolveGoogleLinks(collected.items);
   await enrich(collected.items);
-  const items = dropBoilerplateSummaries(collected.items);
+  // Resolved links can reveal a search result as a story a direct source already has.
+  const items = dropBoilerplateSummaries(mergeItems([collected.items]));
 
   const [models, papers, focus] = await Promise.all([
     withFallback('trending models', () => trendingModels(12), previous?.models),

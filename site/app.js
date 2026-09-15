@@ -111,12 +111,30 @@ function isNew(item) {
   return state.lastVisit !== null && Date.parse(item.published) > state.lastVisit;
 }
 
+/**
+ * The AIs a story is about, most relevant first, for its cover when it has no
+ * picture: the AI tab a search found it for, the maker whose blog it's from,
+ * then AIs named in the headline or teaser.
+ */
+function coverMarkIds(item) {
+  const list = state.data?.focus ?? [];
+  const ids = new Set(item.focus ?? []);
+  for (const f of list) if (f.sources.includes(item.source)) ids.add(f.id);
+  for (const f of list) if (item.topics?.includes(f.topic)) ids.add(f.id);
+  return [...ids].filter((id) => focusById(id)).slice(0, 3);
+}
+
+const marksFor = (ids) => ids
+  .map((id) => ({ svg: logo(id, 'art-logo'), color: focusById(id)?.color }))
+  .filter((m) => m.svg && m.color);
+
 /** An <img> that swaps itself for generated art if it fails to load. */
 function media(item, label, color, seed = item.id) {
   const url = item.image || item.thumbnail;
-  if (!url) return coverArt(seed, color, label);
+  const markIds = coverMarkIds(item);
+  if (!url) return coverArt(seed, color, label, marksFor(markIds));
   return `<img src="${esc(safeUrl(url))}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"
-    class="loading" data-seed="${esc(seed)}" data-color="${esc(color)}" data-label="${esc(label)}">`;
+    class="loading" data-seed="${esc(seed)}" data-color="${esc(color)}" data-label="${esc(label)}" data-marks="${esc(markIds.join(','))}">`;
 }
 
 /** The outlet to credit: the original publisher for stories found through Google News. */
@@ -916,7 +934,8 @@ function bindEvents() {
     if (img.classList.contains('avatar')) {
       img.outerHTML = `<span class="avatar">${esc(img.dataset.initial ?? '?')}</span>`;
     } else if (img.dataset.seed) {
-      img.outerHTML = coverArt(img.dataset.seed, img.dataset.color, img.dataset.label);
+      const markIds = (img.dataset.marks ?? '').split(',').filter(Boolean);
+      img.outerHTML = coverArt(img.dataset.seed, img.dataset.color, img.dataset.label, marksFor(markIds));
     }
   }, true);
 

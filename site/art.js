@@ -2,6 +2,10 @@
  * Generated cover art for stories without an image (or whose image fails to
  * load). Deterministic per story: the same headline always gets the same
  * picture, tinted with its source's colour.
+ *
+ * On top of the pattern goes either the neon logo of each AI the story is
+ * about (`marks`), or — when it isn't about a particular AI — the outlet's
+ * name set large, like a masthead.
  */
 
 let uid = 0;
@@ -109,7 +113,10 @@ function horizon(r, W, H) {
 
 const PATTERNS = [waves, rings, network, horizon];
 
-export function coverArt(seed, color, label) {
+/**
+ * @param marks  up to three `{ svg, color }` logos, in order of relevance
+ */
+export function coverArt(seed, color, label, marks = []) {
   const r = rng(hash(seed));
   const W = 400;
   const H = 225;
@@ -121,6 +128,10 @@ export function coverArt(seed, color, label) {
   const g1 = [f(W * (0.1 + r() * 0.4)), f(H * r())];
   const g2 = [f(W * (0.5 + r() * 0.5)), f(H * r())];
 
+  const overlay = marks.length
+    ? `<div class="art-marks">${marks.map((m) => `<span class="art-mark" style="--c:${esc(m.color)}">${m.svg}</span>`).join('')}</div><span class="art-label">${esc(label)}</span>`
+    : `<span class="art-title">${esc(label)}</span>`;
+
   return `<div class="art" role="img" aria-label="${esc(label)}"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
 <defs>
 <linearGradient id="${id}b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${h1} 45% 10%)"/><stop offset="1" stop-color="hsl(${f(h2)} 55% 18%)"/></linearGradient>
@@ -131,6 +142,5 @@ export function coverArt(seed, color, label) {
 <circle cx="${g1[0]}" cy="${g1[1]}" r="190" fill="url(#${id}g1)"/>
 <circle cx="${g2[0]}" cy="${g2[1]}" r="160" fill="url(#${id}g2)"/>
 ${pattern}
-<text x="18" y="${H - 18}" fill="#fff" fill-opacity=".75" font-family="JetBrains Mono, ui-monospace, monospace" font-size="12" font-weight="600" letter-spacing="1.5">${esc(label.toUpperCase())}</text>
-</svg></div>`;
+</svg>${overlay}</div>`;
 }
