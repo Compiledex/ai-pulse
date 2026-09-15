@@ -243,6 +243,9 @@ async function restoreCovers(paths) {
 }
 
 const ownCover = (i) => i.cover?.startsWith('covers/story/');
+
+/** Bumped when the way pool pictures are handed out changes, so existing picks are redone once. */
+const COVER_ASSIGNMENT_VERSION = 2;
 const coverExists = (rel) => rel && existsSync(join(COVERS_DIR, rel.replace(/^covers\//, '')));
 
 /**
@@ -296,11 +299,23 @@ async function makeCovers(items, previous, now) {
     log('covers: no Cloudflare credentials — reusing existing covers only');
   }
 
+  // Stories keep the pool picture they were given (carried over by reusePrevious);
+  // new ones take the least-used variant of their theme, oldest story first.
+  const poolPaths = new Set(Object.values(pool).flat());
+  const reassign = previous?.coverAssignment !== COVER_ASSIGNMENT_VERSION;
+  const usage = new Map();
   for (const item of items) {
-    if (item.image || ownCover(item)) continue;
-    const cover = poolCover(pool, item);
-    if (cover) item.cover = cover;
-    else delete item.cover;
+    if (reassign && item.cover && !ownCover(item)) delete item.cover;
+    if (item.image) delete item.cover;
+    else if (item.cover && !ownCover(item) && !poolPaths.has(item.cover)) delete item.cover;
+    if (item.cover) usage.set(item.cover, (usage.get(item.cover) ?? 0) + 1);
+  }
+  for (const item of [...items].reverse()) {
+    if (item.image || item.cover) continue;
+    const cover = poolCover(pool, item, usage);
+    if (!cover) continue;
+    item.cover = cover;
+    usage.set(cover, (usage.get(cover) ?? 0) + 1);
   }
   return { pool, budget };
 }
@@ -386,6 +401,7 @@ async function main() {
     people,
     coverPool,
     coverBudget,
+    coverAssignment: COVER_ASSIGNMENT_VERSION,
     items,
     models,
     papers,

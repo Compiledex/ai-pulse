@@ -65,11 +65,20 @@ test('the plan fills a starter pool first, then new stories, then grows the pool
   assert.ok(storiesDone.plan.length > 0 && storiesDone.plan.every((t) => t.kind === 'pool' && t.variant >= 2), 'then the pool grows');
 });
 
-test('a story keeps the same pool cover between builds', () => {
+test('pool covers: deterministic, and spread across the variants', () => {
   const pool = { chips: ['c0', 'c1', 'c2'], general: ['g0'] };
   const item = { id: 'a1b2c3', topics: ['chips'] };
   assert.equal(poolCover(pool, item), poolCover(pool, { ...item }));
   assert.ok(pool.chips.includes(poolCover(pool, item)));
+
+  const usage = new Map();
+  const picks = Array.from({ length: 6 }, (_, i) => {
+    const pick = poolCover(pool, { id: `story-${i}`, topics: ['chips'] }, usage);
+    usage.set(pick, (usage.get(pick) ?? 0) + 1);
+    return pick;
+  });
+  assert.deepEqual([...usage.values()], [2, 2, 2], 'six stories share three variants evenly');
+  assert.notEqual(picks[0], picks[1], 'consecutive stories differ');
   assert.equal(poolCover(pool, { id: 'x', topics: ['robotics'] }), 'g0', 'falls back to the general pool');
   assert.equal(poolCover({}, item), null);
 });
