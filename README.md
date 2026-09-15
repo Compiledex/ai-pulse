@@ -23,12 +23,15 @@ There is no server and no database. A GitHub Actions workflow runs twice an hour
    - **AI labs** — OpenAI, Anthropic, Google DeepMind, Google AI, Mistral, NVIDIA, Hugging Face, AWS. Anthropic has no feed, so its news page is read instead, from the post data the page embeds (which also catches featured posts outside `/news/`).
    - **Tech press** — The Verge, TechCrunch, WIRED, MIT Technology Review, Ars Technica, The Guardian, The Decoder.
    - **Business & world** — Reuters, Axios, Bloomberg, Financial Times, The New York Times, CNBC, BBC News, CBS News, NPR, Politico, Business Insider. These feeds cover everything, so only stories about AI are kept. Reuters has no public feed and is read through a Google News site search.
+
+   Many outlets file AI stories under Business, Politics or Markets rather than Technology, so a source can list extra section feeds (`more`), filtered to AI stories — BBC's interview on an AI "kill switch" only ever appeared in its Business feed.
    - **Analysis** — Simon Willison, Latent Space, Import AI, Hacker News (100+ points).
    - **Around the web** — one Google News search per AI in [`focus.mjs`](focus.mjs), 15 results each. Google News links are redirects, so the build resolves each one to the real article (cached, so once per story) — giving a direct link and letting the share-image lookup find a picture.
-2. Entries are normalised, de-duplicated (by URL and headline — a story from a direct source beats the same story found by search), tagged with topics, and trimmed to recent stories.
-3. Stories without an image get one from their article's `og:image`. The previous live snapshot acts as a cache, so each article is only looked up once rather than on every build.
-4. The schedule is read from the cron line in the workflow file itself, so the page's countdown can't drift from the real schedule.
-5. Everything is written to `dist/data/news.json` next to the static page in `site/`, and deployed to GitHub Pages.
+2. Feeds only hold their latest 10–100 entries, so each build also keeps what the previous snapshot had for a source: a story stays for 30 days even after it scrolls out of the feed.
+3. Entries are normalised, de-duplicated (by URL and headline — a story from a direct source beats the same story found by search), tagged with topics, and trimmed to recent stories.
+4. Stories without an image get one from their article's `og:image`. The previous live snapshot acts as a cache, so each article is only looked up once rather than on every build.
+5. The schedule is read from the cron line in the workflow file itself, so the page's countdown can't drift from the real schedule.
+6. Everything is written to `dist/data/news.json` next to the static page in `site/`, and deployed to GitHub Pages.
 
 The page (`site/`) is plain HTML, CSS and JavaScript modules — no framework, no build step. It reads the JSON and renders everything client-side. Some publishers (Reuters, Bloomberg, the FT, OpenAI) block automated requests, so their share images can't be fetched; those stories get generated cover art instead — the neon logo of each AI the story is about, or the outlet's name as a masthead.
 

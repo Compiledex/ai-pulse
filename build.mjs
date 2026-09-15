@@ -17,10 +17,10 @@ import { fromGoogleNews, resolveGoogleNewsUrl, searchUrl } from './lib/googlenew
 import { fetchJson, fetchText, mapLimit } from './lib/http.mjs';
 import { dailyPapers, trendingModels, trendingModelsBy } from './lib/huggingface.mjs';
 import {
-  dropBoilerplateSummaries, mergeItems, normalizeEntries, reusePrevious,
+  carryOver, dropBoilerplateSummaries, LIMITS, mergeItems, normalizeEntries, reusePrevious,
 } from './lib/pipeline.mjs';
 import { scheduleInfo } from './lib/schedule.mjs';
-import { tagTopics, TOPICS } from './lib/topics.mjs';
+import { isAboutAI, tagTopics, TOPICS } from './lib/topics.mjs';
 import { CATEGORIES, SOURCES } from './sources.mjs';
 
 const OUT = 'dist';
@@ -50,12 +50,27 @@ async function loadPrevious() {
   }
 }
 
+async function readFeed(source, url) {
+  const body = await fetchText(url, { timeoutMs: 20000 });
+  if (source.kind === 'anthropic') return parseAnthropicIndex(body, url);
+  if (source.kind === 'googlenews') return fromGoogleNews(parseFeed(body, url), { keepPublisher: false });
+  return parseFeed(body, url);
+}
+
+/**
+ * The source's main feed plus its `more` section feeds (kept to AI stories).
+ * A failing section feed is logged and skipped; only the main feed failing
+ * counts as the source being down.
+ */
 async function readSource(source) {
-  const body = await fetchText(source.url, { timeoutMs: 20000 });
-  let entries;
-  if (source.kind === 'anthropic') entries = parseAnthropicIndex(body, source.url);
-  else if (source.kind === 'googlenews') entries = fromGoogleNews(parseFeed(body, source.url), { keepPublisher: false });
-  else entries = parseFeed(body, source.url);
+  const [main, ...extra] = await Promise.allSettled([source.url, ...(source.more ?? [])].map((url) => readFeed(source, url)));
+  if (main.status === 'rejected') throw main.reason;
+
+  const entries = [...main.value];
+  extra.forEach((result, i) => {
+    if (result.status === 'fulfilled') entries.push(...result.value.filter((e) => isAboutAI(`${e.title} ${e.summary}`)));
+    else log(`    ${source.name}: section feed ${source.more[i]} failed: ${result.reason.message}`);
+  });
   if (entries.length === 0) throw new Error('no entries found (feed format changed?)');
   return entries;
 }
@@ -90,16 +105,18 @@ async function collectNews(previous, now) {
   const statuses = {};
 
   const lists = await Promise.all(SOURCES.map(async (source) => {
+    const web = source.kind === 'websearch';
+    const limit = web ? LIMITS.keepWebSearch : LIMITS.keepPerSource;
     try {
-      const entries = source.kind === 'websearch' ? await readWebSearch() : await readSource(source);
-      const items = source.kind === 'websearch'
-        ? mergeItems([normalizeEntries(source, entries, now, { perSource: Infinity })])
-        : normalizeEntries(source, entries, now);
+      const entries = web ? await readWebSearch() : await readSource(source);
+      const fresh = normalizeEntries(source, entries, now, web ? { perSource: Infinity } : {});
+      // Stories that have since scrolled out of the feed stay for 30 days.
+      const items = carryOver(source, fresh, previous?.items, now, limit);
       statuses[source.id] = { ok: true, count: items.length };
-      log(`  ✓ ${source.name.padEnd(24)} ${items.length}`);
+      log(`  ✓ ${source.name.padEnd(24)} ${String(items.length).padStart(3)} (${fresh.length} in feed now)`);
       return items;
     } catch (err) {
-      const kept = (previous?.items ?? []).filter((i) => i.source === source.id);
+      const kept = carryOver(source, [], previous?.items, now, limit);
       statuses[source.id] = { ok: false, count: kept.length, error: err.message, stale: kept.length > 0 };
       log(`  ✗ ${source.name.padEnd(24)} ${err.message}${kept.length ? ` (keeping ${kept.length} previous)` : ''}`);
       return kept;

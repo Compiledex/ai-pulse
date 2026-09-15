@@ -100,3 +100,27 @@ test('topic tagging avoids common false positives', () => {
   assert.ok(tagTopics('Anthropic raises $30 billion').includes('business'));
   assert.ok(tagTopics('Claude Opus 5 is better at coding agents').includes('coding'));
 });
+
+test('carryOver keeps stories that scrolled out of the feed, up to the age and count limits', async () => {
+  const { carryOver } = await import('../lib/pipeline.mjs');
+  const iso = (hoursAgo) => new Date(NOW - hoursAgo * HOUR).toISOString();
+  const story = (title, hoursAgo, extra = {}) => ({ id: title, title, url: `https://news.example/${encodeURIComponent(title)}`, source: 'bbc', summary: '', image: 'https://img.example/x.jpg', published: iso(hoursAgo), topics: [], ...extra });
+
+  const previous = [
+    story('Kill switch interview', 30), // no longer in the feed
+    story('Still in the feed', 2, { image: 'https://img.example/old.jpg' }),
+    story('Too old', (LIMITS.maxAgeDays + 1) * 24),
+    story('Other outlet', 3, { source: 'verge' }),
+    story('Anthropic raises again', 40), // re-tagged on the way through
+  ];
+  const fresh = [story('Still in the feed', 2, { image: null }), story('Brand new', 0.5)];
+
+  const kept = carryOver({ id: 'bbc' }, fresh, previous, NOW);
+  assert.deepEqual(kept.map((i) => i.title), ['Brand new', 'Still in the feed', 'Kill switch interview', 'Anthropic raises again']);
+  assert.equal(kept[1].image, null, 'the fresh copy wins (reusePrevious fills its image later)');
+  assert.deepEqual(kept[3].topics, ['anthropic', 'business']);
+
+  assert.equal(carryOver({ id: 'bbc' }, fresh, previous, NOW, 2).length, 2, 'count limit');
+  const filtered = carryOver({ id: 'bbc', aiOnly: true }, [], [story('Gardening tips', 5), story('AI in gardens', 6)], NOW);
+  assert.deepEqual(filtered.map((i) => i.title), ['AI in gardens'], 'aiOnly applies to remembered stories too');
+});
