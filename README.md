@@ -17,7 +17,7 @@ A self-updating hub for everything happening in AI — lab announcements, tech j
 
 ## How it works
 
-There is no server and no database. A GitHub Actions workflow runs twice an hour (at :17 and :47 — GitHub's scheduler is best-effort and drops some runs under load, so two slots away from the top of the hour keep gaps short):
+There is no server and no database. A GitHub Actions workflow runs every half hour, at :00 and :30 (see [A reliable schedule](#a-reliable-schedule)):
 
 1. `build.mjs` fetches every source in [`sources.mjs`](sources.mjs) in parallel:
    - **AI labs** — OpenAI, Anthropic, Google DeepMind, Google AI, Mistral, NVIDIA, Hugging Face, AWS. Anthropic has no feed, so its news page is read instead, from the post data the page embeds (which also catches featured posts outside `/news/`).
@@ -46,12 +46,18 @@ Generated images are stored outside git: the Actions cache keeps them between bu
 
 ### A reliable schedule
 
-GitHub runs scheduled workflows on a best-effort basis, and in practice dropped most of this repo's (two of ~28 in the first 14 hours). So the real clock is a small [Cloudflare Worker](scheduler/worker.js) with a Cron Trigger at :17 and :47, which starts the build through GitHub's `workflow_dispatch` API using a fine-grained token limited to this repo's Actions. The workflow's own schedule remains as a backup, and a test keeps the two in step with the page's countdown.
+GitHub runs scheduled workflows on a best-effort basis, and in practice dropped most of this repo's (two of ~28 in the first 14 hours). So the real clock is an external job on [cron-job.org](https://cron-job.org) that, at :00 and :30, sends
 
-```sh
-npx wrangler deploy --config scheduler/wrangler.toml
-npx wrangler secret put GITHUB_TOKEN --config scheduler/wrangler.toml
 ```
+POST https://api.github.com/repos/Compiledex/ai-pulse/actions/workflows/build.yml/dispatches
+Authorization: Bearer <fine-grained token: this repo only, Actions read & write>
+Accept: application/vnd.github+json
+X-GitHub-Api-Version: 2022-11-28
+
+{"ref":"main"}
+```
+
+GitHub answers `204 No Content` when the build is queued. The workflow's own `schedule` stays on the same minutes as a backup, and the page's countdown reads it, so a test pins it to :00 and :30. (A Cloudflare Worker Cron Trigger was tried first, but never fired on the account.)
 
 ### Failure handling
 

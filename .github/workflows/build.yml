@@ -3,13 +3,13 @@ name: Collect news and deploy
 on:
   push:
     branches: [main]
-  # Twice an hour. GitHub runs schedules on a best-effort basis and dropped most
-  # of ours, so the real clock is a Cloudflare Worker (scheduler/) that starts
-  # this workflow via workflow_dispatch at the same minutes. This schedule
-  # stays as a backup. The page's countdown reads this line — see
-  # lib/schedule.mjs — and a test keeps it in step with scheduler/wrangler.toml.
+  # Every half hour. GitHub runs schedules on a best-effort basis and dropped
+  # most of ours, so the real clock is an external cron-job.org job that starts
+  # this workflow via workflow_dispatch at :00 and :30. This schedule is only a
+  # backup — keep it on the same minutes: the page's countdown reads this line
+  # (see lib/schedule.mjs).
   schedule:
-    - cron: '17,47 * * * *'
+    - cron: '0,30 * * * *'
   workflow_dispatch:
 
 permissions:

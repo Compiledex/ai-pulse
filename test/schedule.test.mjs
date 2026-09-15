@@ -24,11 +24,9 @@ test('the real workflow has a schedule the countdown understands', () => {
   assert.ok(cronMinutes(yaml)?.length);
 });
 
-test('the Cloudflare scheduler fires at the same minutes the countdown shows', () => {
+test('the countdown matches the external cron-job.org schedule (:00 and :30)', () => {
   const yaml = readFileSync(new URL('../.github/workflows/build.yml', import.meta.url), 'utf8');
-  const toml = readFileSync(new URL('../scheduler/wrangler.toml', import.meta.url), 'utf8');
-  const workerCron = toml.match(/crons\s*=\s*\[\s*"([^"]+)"/)?.[1];
-  assert.deepEqual(cronMinutes(`cron: '${workerCron}'`), cronMinutes(yaml));
+  assert.deepEqual(cronMinutes(yaml), [0, 30]);
 });
 
 test('next run is strictly after now, across slots, hours and days', () => {
