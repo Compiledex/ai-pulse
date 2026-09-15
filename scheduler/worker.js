@@ -25,6 +25,7 @@ async function dispatch(env) {
   });
   // 204 No Content means GitHub accepted it.
   if (res.status !== 204) throw new Error(`GitHub answered ${res.status}: ${await res.text()}`);
+  console.log('Build dispatched');
 }
 
 export default {
